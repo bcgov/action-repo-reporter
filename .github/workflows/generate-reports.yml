@@ -1,0 +1,79 @@
+name: Multi-Repo Code Quality Audits
+
+on:
+  schedule:
+    - cron: '0 8 * * 1-5' # Runs at 8:00 AM, Monday to Friday
+  workflow_dispatch: # Allows manual trigger
+
+permissions:
+  contents: write # Needed to commit and push reports back to this repo
+
+jobs:
+  audit-repos:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target_repository:
+          - "bcgov/quickstart-openshift"
+          - "bcgov/pubcode"
+          - "bcgov/actions"
+
+    name: Audit ${{ matrix.target_repository }}
+    steps:
+      # Step 1: Checkout the central dashboard repo (where we commit the reports)
+      - name: Checkout Central Reporting Repo
+        uses: actions/checkout@v4
+        with:
+          path: dashboard
+
+      # Step 2: Checkout the target repository into a subfolder
+      - name: Checkout Target Repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.target_repository }}
+          path: target_repo
+
+      # Step 3: Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Step 4: Install GitHub Agentic Workflows CLI
+      - name: Install GitHub Agentic Workflows CLI
+        run: npm install -g @github/gh-aw
+
+      # Step 5: Compile the prompt
+      - name: Compile Workflow
+        run: gh aw compile dashboard/.github/workflows/fds-project-audit.prompt.md
+
+      # Step 6: Execute Agentic Audit
+      - name: Execute Agentic Audit
+        run: gh aw run fds-project-audit
+        env:
+          PROJECT_DIR: ../target_repo
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: ./dashboard
+
+      # Step 7: Commit and Push Report
+      - name: Commit and Push Report
+        run: |
+          cd dashboard
+          mkdir -p reports
+          
+          # Find the generated assessment file and move it to reports/
+          find ../target_repo -maxdepth 1 -name "*-code-quality-assessment.md" -exec mv {} reports/ \; 2>/dev/null || true
+          find . -maxdepth 1 -name "*-code-quality-assessment.md" -exec mv {} reports/ \; 2>/dev/null || true
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add reports/
+          
+          # Only commit and push if there are changes
+          if git diff --cached --quiet; then
+            echo "No changes to commit for ${{ matrix.target_repository }}."
+          else
+            git commit -m "chore: update code quality audit for ${{ matrix.target_repository }}"
+            git push
+          fi
