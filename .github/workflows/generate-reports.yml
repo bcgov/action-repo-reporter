@@ -2,11 +2,12 @@ name: Multi-Repo Code Quality Audits
 
 on:
   schedule:
-    - cron: '0 8 * * 1-5' # Runs at 8:00 AM, Monday to Friday
+    - cron: '0 8 * * 1' # Runs at 8:00 AM every Monday
   workflow_dispatch: # Allows manual trigger
 
 permissions:
   contents: write # Needed to commit and push reports back to this repo
+  copilot-requests: write # Needed to use the organization's Copilot token for LLM queries
 
 jobs:
   audit-repos:
