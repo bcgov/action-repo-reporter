@@ -20,7 +20,7 @@ jobs:
           node-version: '20'
 
       - name: Install GitHub Agentic Workflows CLI
-        run: npm install -g @github/gh-aw@0.81.6
+        run: gh extension install github/gh-aw --pin v0.81.6
 
       - name: Validate Prompt Frontmatter and Expressions
         run: |

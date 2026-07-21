@@ -43,7 +43,7 @@ jobs:
 
       # Step 4: Install GitHub Agentic Workflows CLI
       - name: Install GitHub Agentic Workflows CLI
-        run: npm install -g @github/gh-aw@0.81.6
+        run: gh extension install github/gh-aw --pin v0.81.6
 
       # Step 5: Compile the prompt
       - name: Compile Workflow
