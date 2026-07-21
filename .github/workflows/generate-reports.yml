@@ -37,13 +37,13 @@ jobs:
 
       # Step 3: Setup Node.js
       - name: Setup Node.js
-        uses: actions/setup-node@60a2fcb3024c11af7224ef77b252643acb515562 # v4.0.3
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
         with:
           node-version: '20'
 
       # Step 4: Install GitHub Agentic Workflows CLI
       - name: Install GitHub Agentic Workflows CLI
-        run: npm install -g @github/gh-aw@0.81.6
+        run: gh extension install github/gh-aw --pin v0.81.6
 
       # Step 5: Compile the prompt
       - name: Compile Workflow

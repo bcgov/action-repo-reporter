@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  validate-workflows:
+    name: Validate Workflows
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with:
+          node-version: '20'
+
+      - name: Install GitHub Agentic Workflows CLI
+        run: gh extension install github/gh-aw --pin v0.81.6
+
+      - name: Validate Prompt Frontmatter and Expressions
+        run: |
+          set -euo pipefail
+          # Validate that workflows compile without writing lock files
+          gh aw validate .github/workflows
+
+  # Required merge gate aggregator job
+  results:
+    name: CI Results
+    needs: [validate-workflows]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Log Job Results Context
+        run: |
+          echo "=== Upstream Job Statuses ==="
+          echo '${{ toJson(needs) }}'
+
+      - name: Evaluate Overall Status
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "❌ Critical Check Failure: At least one required job has failed or was cancelled."
+          exit 1
+
+      - name: Success Message
+        run: echo "✅ All validation checks passed successfully!"
