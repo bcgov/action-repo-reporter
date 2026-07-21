@@ -1,7 +1,15 @@
 ---
 on:
   workflow_call:
+    inputs:
+      target_repository:
+        required: true
+        type: string
   workflow_dispatch:
+    inputs:
+      target_repository:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -11,13 +19,14 @@ permissions:
 ---
 # FDS Full-Stack Project Audit
 
-You are conducting a technical audit of an FDS (Forest Digital Services) full-stack application. Your goal is to produce a director-level assessment report that covers security, reliability, maintainability, CI/CD pipeline integrity, and adherence to the established FDS stack standard. To navigate between files, make sure to load and use the `graphify` skill.
+You are conducting a technical audit of the target repository: `{{ github.event.inputs.target_repository }}`. Your goal is to produce a director-level assessment report that covers security, reliability, maintainability, CI/CD pipeline integrity, and adherence to the established FDS stack standard. To navigate between files, make sure to load and use the `graphify` skill.
 
 ---
 
 ## Project to Audit
 
-**Project directory:** `{{ env.PROJECT_DIR }}`
+**Target Repository:** `{{ github.event.inputs.target_repository }}`
+**Project Directory:** `./target_repo`
 
 Use the tools available to you to explore this directory before writing anything. Read actual source files. Do not infer — verify.
 
@@ -180,12 +189,13 @@ Write the report in the following format. Do not use numbered finding IDs, bulle
 
 ## Before You Start
 
-1. Run `find {{ env.PROJECT_DIR }} -maxdepth 1 -type f -o -maxdepth 2 -type d` to understand the top-level structure.
-2. Read `pom.xml` (backend) and `package.json` (frontend) to confirm the stack.
-3. Scan `.github/workflows/` for all workflow and shell script files.
-4. Then proceed section by section. Do not write the report until you have read the source files for each area.
-
+1. Clone the target repository `{{ github.event.inputs.target_repository }}` into a local directory named `./target_repo` (e.g. run `git clone https://github.com/{{ github.event.inputs.target_repository }}.git ./target_repo`).
+2. Run `find ./target_repo -maxdepth 1 -type f -o -maxdepth 2 -type d` to understand the top-level structure.
+3. Read `./target_repo/pom.xml` (backend) and `./target_repo/package.json` (frontend) to confirm the stack.
+4. Scan `./target_repo/.github/workflows/` for all workflow and shell script files.
+5. Then proceed section by section. Do not write the report until you have read the source files for each area.
 
 ## After is Complete
 
-When you have completed the report, review it for clarity and completeness. Ensure that each finding is supported by evidence from the codebase and that the recommended next steps are actionable and directly address the findings. Save the report as a markdown file named `[ProjectName]-code-quality-assessment.md`.
+When you have completed the report, review it for clarity and completeness. Ensure that each finding is supported by evidence from the codebase and that the recommended next steps are actionable and directly address the findings.
+1. Save the report inside the `reports/` folder of the current workspace, named after the target repository name (e.g. `reports/pubcode-code-quality-assessment.md` or `reports/actions-code-quality-assessment.md` or `reports/quickstart-openshift-code-quality-assessment.md`).
