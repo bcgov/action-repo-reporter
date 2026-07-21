@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write # Needed to commit and push reports back to this repo
+  actions: write # Needed to trigger workflow dispatches via gh aw run
   copilot-requests: write # Needed to use the organization's Copilot token for LLM queries
 
 jobs:
