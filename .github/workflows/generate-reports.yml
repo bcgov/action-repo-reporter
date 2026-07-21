@@ -24,26 +24,26 @@ jobs:
     steps:
       # Step 1: Checkout the central dashboard repo (where we commit the reports)
       - name: Checkout Central Reporting Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           path: dashboard
 
       # Step 2: Checkout the target repository into a subfolder
       - name: Checkout Target Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           repository: ${{ matrix.target_repository }}
           path: target_repo
 
       # Step 3: Setup Node.js
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@60a2fcb3024c11af7224ef77b252643acb515562 # v4.0.3
         with:
           node-version: '20'
 
       # Step 4: Install GitHub Agentic Workflows CLI
       - name: Install GitHub Agentic Workflows CLI
-        run: npm install -g @github/gh-aw
+        run: npm install -g @github/gh-aw@0.81.6
 
       # Step 5: Compile the prompt
       - name: Compile Workflow
@@ -51,7 +51,7 @@ jobs:
 
       # Step 6: Execute Agentic Audit
       - name: Execute Agentic Audit
-        run: gh aw run fds-project-audit
+        run: gh aw run fds-project-audit.prompt
         env:
           PROJECT_DIR: ../target_repo
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -60,6 +60,7 @@ jobs:
       # Step 7: Commit and Push Report
       - name: Commit and Push Report
         run: |
+          set -euo pipefail
           cd dashboard
           mkdir -p reports
           
@@ -76,5 +77,18 @@ jobs:
             echo "No changes to commit for ${{ matrix.target_repository }}."
           else
             git commit -m "chore: update code quality audit for ${{ matrix.target_repository }}"
-            git push
+            
+            # Retry loop to push to origin main safely with parallel matrix runners
+            for i in {1..5}; do
+              git fetch origin main
+              git rebase origin/main
+              if git push origin HEAD:main; then
+                echo "Successfully pushed report for ${{ matrix.target_repository }}"
+                exit 0
+              fi
+              echo "Push failed. Retrying in $((i * 2)) seconds..."
+              sleep $((i * 2))
+            done
+            echo "Failed to push report after 5 attempts."
+            exit 1
           fi

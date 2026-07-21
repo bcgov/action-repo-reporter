@@ -25,7 +25,7 @@ Use the tools available to you to explore this directory before writing anything
 
 ## FDS Stack Standard
 
-The established FDS standard, as demonstrated by `nr-waste-plus` at `/Users/pcruz/Repos/alliance/nr-waste-plus`, is:
+The established FDS standard, as demonstrated by `nr-waste-plus`, is:
 
 **Backend:**
 - Spring Boot 3.x or 4.x with `spring-boot-starter-parent` as the Maven parent — no plain Spring Framework WAR deployments
@@ -49,7 +49,7 @@ The established FDS standard, as demonstrated by `nr-waste-plus` at `/Users/pcru
 - Third-party GitHub Actions pinned to immutable commit SHAs (not mutable semver tags)
 - Secrets passed as HTTP headers, never as URL parameters or curl form fields
 - `secrets:` blocks in called workflows enumerate only what that workflow needs — no `secrets: inherit`
-- Context values (`github.head_ref`, `github.ref_name`, `github.actor`, etc.) assigned to `env:` variables before shell use — never interpolated directly via `${ { } }` inside `run:` blocks
+- Context values (`github.head_ref`, `github.ref_name`, `github.actor`, etc.) assigned to `env:` variables before shell use — never interpolated directly via `&#36;{{ }}` inside `run:` blocks
 - Shell scripts use `set -euo pipefail` and validate API responses before acting on them
 - No credential or token values exported at the workflow `env:` level — scoped to the individual step `env:` blocks that require them
 
@@ -100,7 +100,7 @@ Review every file under `.github/workflows/` and any `.sh` scripts they referenc
 - Are any workflows using `secrets: inherit`? List which ones.
 - Is any secret or token exported at the workflow-level `env:` block, making it available to every step?
 - Are all external actions (`uses:`) pinned to full commit SHAs? List any that use mutable `@vN` tags.
-- Are any GitHub context values — `github.head_ref`, `github.ref_name`, `github.actor`, `github.event.inputs.*` — interpolated directly via `${ { } }` inside a `run:` block? These are script injection vectors.
+- Are any GitHub context values — `github.head_ref`, `github.ref_name`, `github.actor`, `github.event.inputs.*` — interpolated directly via `&#36;{{ }}` inside a `run:` block? These are script injection vectors.
 - Do shell scripts begin with `set -euo pipefail`?
 - Are API responses validated for expected structure before fields are extracted from them?
 - Are there any syntactically broken `curl` commands (e.g., `curl -s POST` instead of `curl -s -X POST`) that silently do the wrong thing?
