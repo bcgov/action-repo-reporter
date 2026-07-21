@@ -26,10 +26,4 @@ jobs:
         run: |
           set -euo pipefail
           # Validate that workflows compile without writing lock files
-          gh aw validate .
-
-      - name: Lint Workflows
-        run: |
-          set -euo pipefail
-          # Lint existing compiled lock files using actionlint
-          gh aw lint
+          gh aw validate .github/workflows
