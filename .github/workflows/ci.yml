@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-workflows:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with:
+          node-version: '20'
+
+      - name: Install GitHub Agentic Workflows CLI
+        run: npm install -g @github/gh-aw@0.81.6
+
+      - name: Validate Prompt Frontmatter and Expressions
+        run: |
+          set -euo pipefail
+          # Validate that workflows compile without writing lock files
+          gh aw validate .
+
+      - name: Lint Workflows
+        run: |
+          set -euo pipefail
+          # Lint existing compiled lock files using actionlint
+          gh aw lint
