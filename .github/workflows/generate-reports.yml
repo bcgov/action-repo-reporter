@@ -6,9 +6,10 @@ on:
   workflow_dispatch: # Allows manual trigger
 
 permissions:
+  actions: read
   contents: write
-  issues: read
-  pull-requests: read
+  issues: write
+  pull-requests: write
   copilot-requests: write
 
 jobs:
