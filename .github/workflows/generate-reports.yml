@@ -5,7 +5,11 @@ on:
     - cron: '0 8 * * 1' # Runs at 8:00 AM UTC every Monday
   workflow_dispatch: # Allows manual trigger
 
-permissions: {}
+permissions:
+  contents: write
+  issues: read
+  pull-requests: read
+  copilot-requests: write
 
 jobs:
   audit-quickstart-openshift:
