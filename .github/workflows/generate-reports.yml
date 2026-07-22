@@ -14,21 +14,21 @@ permissions:
 jobs:
   audit-quickstart-openshift:
     name: Audit quickstart-openshift
-    uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
+    uses: bcgov/action-repo-reporter/.github/workflows/fds-project-audit.prompt.lock.yml@fix/asynchronous-audits
     with:
       target_repository: bcgov/quickstart-openshift
     secrets: inherit
 
   audit-pubcode:
     name: Audit pubcode
-    uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
+    uses: bcgov/action-repo-reporter/.github/workflows/fds-project-audit.prompt.lock.yml@fix/asynchronous-audits
     with:
       target_repository: bcgov/pubcode
     secrets: inherit
 
   audit-actions:
     name: Audit actions
-    uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
+    uses: bcgov/action-repo-reporter/.github/workflows/fds-project-audit.prompt.lock.yml@fix/asynchronous-audits
     with:
       target_repository: bcgov/actions
     secrets: inherit
