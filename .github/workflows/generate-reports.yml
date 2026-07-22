@@ -22,6 +22,7 @@ jobs:
 
   audit-pubcode:
     name: Audit pubcode
+    needs: audit-quickstart-openshift
     uses: bcgov/action-repo-reporter/.github/workflows/fds-project-audit.prompt.lock.yml@fix/asynchronous-audits
     with:
       target_repository: bcgov/pubcode
@@ -29,6 +30,7 @@ jobs:
 
   audit-actions:
     name: Audit actions
+    needs: audit-pubcode
     uses: bcgov/action-repo-reporter/.github/workflows/fds-project-audit.prompt.lock.yml@fix/asynchronous-audits
     with:
       target_repository: bcgov/actions
