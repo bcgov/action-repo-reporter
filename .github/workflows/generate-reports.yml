@@ -10,11 +10,15 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  copilot-requests: write
 
 jobs:
   audit-quickstart-openshift:
     name: Audit quickstart-openshift
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+      pull-requests: write
     uses: bcgov/action-repo-reporter/.github/workflows/fds-project-audit.prompt.lock.yml@fix/asynchronous-audits
     with:
       target_repository: bcgov/quickstart-openshift
@@ -23,6 +27,11 @@ jobs:
   audit-pubcode:
     name: Audit pubcode
     needs: audit-quickstart-openshift
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+      pull-requests: write
     uses: bcgov/action-repo-reporter/.github/workflows/fds-project-audit.prompt.lock.yml@fix/asynchronous-audits
     with:
       target_repository: bcgov/pubcode
@@ -31,6 +40,11 @@ jobs:
   audit-actions:
     name: Audit actions
     needs: audit-pubcode
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+      pull-requests: write
     uses: bcgov/action-repo-reporter/.github/workflows/fds-project-audit.prompt.lock.yml@fix/asynchronous-audits
     with:
       target_repository: bcgov/actions

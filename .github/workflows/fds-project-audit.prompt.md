@@ -15,7 +15,6 @@ permissions:
   contents: read
   issues: read
   pull-requests: read
-  copilot-requests: write
 ---
 # FDS Full-Stack Project Audit
 
