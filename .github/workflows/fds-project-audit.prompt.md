@@ -18,13 +18,13 @@ permissions:
 ---
 # FDS Full-Stack Project Audit
 
-You are conducting a technical audit of the target repository: `{{ github.event.inputs.target_repository }}`. Your goal is to produce a director-level assessment report that covers security, reliability, maintainability, CI/CD pipeline integrity, and adherence to the established FDS stack standard. To navigate between files, make sure to load and use the `graphify` skill.
+You are conducting a technical audit of the target repository: `{{ inputs.target_repository }}`. Your goal is to produce a director-level assessment report that covers security, reliability, maintainability, CI/CD pipeline integrity, and adherence to the established FDS stack standard. To navigate between files, make sure to load and use the `graphify` skill.
 
 ---
 
 ## Project to Audit
 
-**Target Repository:** `{{ github.event.inputs.target_repository }}`
+**Target Repository:** `{{ inputs.target_repository }}`
 **Project Directory:** `./target_repo`
 
 Use the tools available to you to explore this directory before writing anything. Read actual source files. Do not infer — verify.
@@ -188,7 +188,7 @@ Write the report in the following format. Do not use numbered finding IDs, bulle
 
 ## Before You Start
 
-1. Clone the target repository `{{ github.event.inputs.target_repository }}` into a local directory named `./target_repo` (e.g. run `git clone https://github.com/{{ github.event.inputs.target_repository }}.git ./target_repo`).
+1. Clone the target repository `{{ inputs.target_repository }}` into a local directory named `./target_repo` (e.g. run `git clone https://github.com/{{ inputs.target_repository }}.git ./target_repo`).
 2. Run `find ./target_repo -maxdepth 1 -type f -o -maxdepth 2 -type d` to understand the top-level structure.
 3. Read `./target_repo/pom.xml` (backend) and `./target_repo/package.json` (frontend) to confirm the stack.
 4. Scan `./target_repo/.github/workflows/` for all workflow and shell script files.
