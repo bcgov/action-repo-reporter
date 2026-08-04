@@ -947,6 +947,7 @@ jobs:
         with:
           name: ${{ needs.activation.outputs.artifact_prefix }}agent
           path: |
+            reports/*-code-quality-assessment.md
             /tmp/gh-aw/aw-prompts/prompt.txt
             /tmp/gh-aw/sandbox/agent/logs/
             /tmp/gh-aw/redacted-urls.log
