@@ -19,7 +19,7 @@ jobs:
       actions: read
       issues: write
       pull-requests: write
-    uses: bcgov/action-repo-reporter/.github/workflows/fds-project-audit.prompt.lock.yml@fix/asynchronous-audits
+    uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
     with:
       target_repository: bcgov/quickstart-openshift
     secrets: inherit
@@ -32,7 +32,7 @@ jobs:
       actions: read
       issues: write
       pull-requests: write
-    uses: bcgov/action-repo-reporter/.github/workflows/fds-project-audit.prompt.lock.yml@fix/asynchronous-audits
+    uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
     with:
       target_repository: bcgov/pubcode
     secrets: inherit
@@ -45,7 +45,7 @@ jobs:
       actions: read
       issues: write
       pull-requests: write
-    uses: bcgov/action-repo-reporter/.github/workflows/fds-project-audit.prompt.lock.yml@fix/asynchronous-audits
+    uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
     with:
       target_repository: bcgov/actions
     secrets: inherit
