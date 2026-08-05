@@ -10,6 +10,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  copilot-requests: write
 
 jobs:
   audit-quickstart-openshift:
@@ -19,6 +20,7 @@ jobs:
       actions: read
       issues: write
       pull-requests: write
+      copilot-requests: write
     uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
     with:
       target_repository: bcgov/quickstart-openshift
@@ -32,6 +34,7 @@ jobs:
       actions: read
       issues: write
       pull-requests: write
+      copilot-requests: write
     uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
     with:
       target_repository: bcgov/pubcode
@@ -45,6 +48,7 @@ jobs:
       actions: read
       issues: write
       pull-requests: write
+      copilot-requests: write
     uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
     with:
       target_repository: bcgov/actions
@@ -54,27 +58,53 @@ jobs:
   commit-reports:
     name: Collect and Commit Reports
     needs: [audit-quickstart-openshift, audit-pubcode, audit-actions]
+    if: always()
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - name: Checkout Central Reporting Repo
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        uses: actions/checkout@v7
 
       - name: Download All Artifacts
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372ec80cca3 # v4.2.0
+        uses: actions/download-artifact@v8
 
       - name: Organize Reports
         run: |
           set -euo pipefail
           mkdir -p reports
           
-          # Print the list of downloaded files to help verify
           echo "=== Downloaded Artifact Files ==="
           find . -type f
           
-          # Move all quality assessments to the reports folder
+          # 1. Copy any explicitly named *-code-quality-assessment.md files if present
           find . -name "*-code-quality-assessment.md" -exec cp -v {} reports/ \;
+          
+          # 2. Extract generated audit reports from gh-aw agent_output.json items
+          python3 -c '
+          import json, glob, os
+
+          mapping = {
+              "quickstart-openshift": "reports/quickstart-openshift-code-quality-assessment.md",
+              "pubcode": "reports/pubcode-code-quality-assessment.md",
+              "actions": "reports/actions-code-quality-assessment.md"
+          }
+
+          for json_path in glob.glob("./**/*-agent/agent_output.json", recursive=True):
+              try:
+                  with open(json_path) as f:
+                      data = json.load(f)
+                  for item in data.get("items", []):
+                      body = item.get("body", "")
+                      title = item.get("title", "")
+                      for key, target_path in mapping.items():
+                          if key in json_path.lower() or key in title.lower() or key in body.lower():
+                              with open(target_path, "w") as out:
+                                  out.write(body)
+                              print(f"Extracted {target_path} from {json_path}")
+              except Exception as e:
+                  print(f"Error processing {json_path}: {e}")
+          '
 
       - name: Commit and Push Reports
         run: |
