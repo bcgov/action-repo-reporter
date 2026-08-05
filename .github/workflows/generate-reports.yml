@@ -74,12 +74,37 @@ jobs:
           set -euo pipefail
           mkdir -p reports
           
-          # Print the list of downloaded files to help verify
           echo "=== Downloaded Artifact Files ==="
           find . -type f
           
-          # Move all quality assessments to the reports folder
+          # 1. Copy any explicitly named *-code-quality-assessment.md files if present
           find . -name "*-code-quality-assessment.md" -exec cp -v {} reports/ \;
+          
+          # 2. Extract generated audit reports from gh-aw agent_output.json items
+          python3 -c '
+          import json, glob, os
+
+          mapping = {
+              "quickstart-openshift": "reports/quickstart-openshift-code-quality-assessment.md",
+              "pubcode": "reports/pubcode-code-quality-assessment.md",
+              "actions": "reports/actions-code-quality-assessment.md"
+          }
+
+          for json_path in glob.glob("./**/*-agent/agent_output.json", recursive=True):
+              try:
+                  with open(json_path) as f:
+                      data = json.load(f)
+                  for item in data.get("items", []):
+                      body = item.get("body", "")
+                      title = item.get("title", "")
+                      for key, target_path in mapping.items():
+                          if key in json_path.lower() or key in title.lower() or key in body.lower():
+                              with open(target_path, "w") as out:
+                                  out.write(body)
+                              print(f"Extracted {target_path} from {json_path}")
+              except Exception as e:
+                  print(f"Error processing {json_path}: {e}")
+          '
 
       - name: Commit and Push Reports
         run: |
