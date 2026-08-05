@@ -58,6 +58,7 @@ jobs:
   commit-reports:
     name: Collect and Commit Reports
     needs: [audit-quickstart-openshift, audit-pubcode, audit-actions]
+    if: always()
     runs-on: ubuntu-24.04
     permissions:
       contents: write
