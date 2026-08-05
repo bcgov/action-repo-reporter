@@ -133,7 +133,7 @@ Write the report in the following format. Do not use numbered finding IDs, bulle
 
 **Project:** [Full project name]
 **Date:** [Today's date]
-**Prepared by:** Paulo Cruz
+**Prepared by:** FDS Code Quality Auditor (Automated)
 **Audience:** Director and above
 
 ---
