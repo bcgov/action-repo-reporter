@@ -1,5 +1,7 @@
 ---
 model: claude-3-5-haiku
+concurrency:
+  group: "gh-aw-fds-project-audit.prompt-${{ github.run_id }}-${{ inputs.target_repository }}"
 on:
   workflow_call:
     inputs:
