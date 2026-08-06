@@ -1,4 +1,5 @@
 ---
+model: claude-3-5-haiku
 on:
   workflow_call:
     inputs:

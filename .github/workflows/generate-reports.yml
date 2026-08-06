@@ -28,7 +28,6 @@ jobs:
 
   audit-pubcode:
     name: Audit pubcode
-    needs: audit-quickstart-openshift
     permissions:
       contents: read
       actions: read
@@ -42,7 +41,6 @@ jobs:
 
   audit-actions:
     name: Audit actions
-    needs: audit-pubcode
     permissions:
       contents: read
       actions: read
