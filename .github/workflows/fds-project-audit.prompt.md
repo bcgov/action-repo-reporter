@@ -34,8 +34,9 @@ You are conducting a technical audit of the target repository: `${{ inputs.targe
 
 **Target Repository:** `${{ inputs.target_repository }}`
 **Project Directory:** `./target_repo`
+**Audit Evidence:** `reports/audit_evidence.json`
 
-Use the tools available to you to explore this directory before writing anything. Read actual source files. Do not infer — verify.
+Use `scripts/audit-scan.sh ./target_repo` to generate deterministic evidence in `reports/audit_evidence.json` before writing the report. Read actual source files to verify findings. Do not infer — verify.
 
 ---
 
@@ -197,10 +198,9 @@ Write the report in the following format. Do not use numbered finding IDs, bulle
 ## Before You Start
 
 1. Clone the target repository `${{ inputs.target_repository }}` into a local directory named `./target_repo` (e.g. run `git clone https://github.com/${{ inputs.target_repository }}.git ./target_repo`).
-2. Run `find ./target_repo -maxdepth 1 -type f -o -maxdepth 2 -type d` to understand the top-level structure.
-3. Read `./target_repo/pom.xml` (backend) and `./target_repo/package.json` (frontend) to confirm the stack.
-4. Scan `./target_repo/.github/workflows/` for all workflow and shell script files.
-5. Then proceed section by section. Do not write the report until you have read the source files for each area.
+2. Run the deterministic pre-audit scanner: `bash scripts/audit-scan.sh ./target_repo`. This populates structured evidence into `reports/audit_evidence.json`.
+3. Read `reports/audit_evidence.json` to inspect all deterministic findings across the 5 audit domains (CI/CD, Shell Scripts, Backend, Frontend, Security).
+4. Perform 1-turn report synthesis directly using `reports/audit_evidence.json` combined with any targeted source file reads to write the final director-level report.
 
 ## After is Complete
 

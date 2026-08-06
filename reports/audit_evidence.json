@@ -1,0 +1,76 @@
+{
+  "target_directory": "/home/derek/Repos/action-repo-reporter",
+  "domains": {
+    "cicd": {
+      "unpinned_actions": [
+        {
+          "file": ".github/workflows/generate-reports.yml",
+          "line": 65,
+          "action": "actions/checkout@v7",
+          "content": "uses: actions/checkout@v7"
+        },
+        {
+          "file": ".github/workflows/generate-reports.yml",
+          "line": 68,
+          "action": "actions/download-artifact@v8",
+          "content": "uses: actions/download-artifact@v8"
+        }
+      ],
+      "secrets_inherit": [
+        {
+          "file": ".github/workflows/generate-reports.yml",
+          "line": 27,
+          "content": "secrets: inherit"
+        },
+        {
+          "file": ".github/workflows/generate-reports.yml",
+          "line": 40,
+          "content": "secrets: inherit"
+        },
+        {
+          "file": ".github/workflows/generate-reports.yml",
+          "line": 53,
+          "content": "secrets: inherit"
+        }
+      ],
+      "workflow_level_env_secrets": [],
+      "script_injection_risks": []
+    },
+    "shell_scripts": {
+      "missing_pipefail": []
+    },
+    "backend": {
+      "has_pom_xml": false,
+      "has_spring_boot_parent": false,
+      "has_spring_data_jpa": false,
+      "has_lombok": false,
+      "has_oauth2_resource_server": false,
+      "missing_transactional_writes": []
+    },
+    "frontend": {
+      "has_package_json": false,
+      "has_react_query": false,
+      "has_auth_context": false,
+      "has_error_boundary": false,
+      "uses_import_meta_env_prod": false,
+      "uses_process_env_node_env": false,
+      "has_ci_false": false,
+      "eslint_disabled_files": [],
+      "storage_token_leaks": []
+    },
+    "security": {
+      "hardcoded_credentials": [],
+      "unvalidated_tls": [
+        {
+          "file": ".github/workflows/fds-project-audit.prompt.md",
+          "line": 106,
+          "type": "Unvalidated SSL checkServerTrusted",
+          "content": "- Does any SSL/TLS configuration accept all certificates unconditionally (empty `checkServerTrusted`, disabled hostname verification)?"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "total_findings": 6
+  }
+}
