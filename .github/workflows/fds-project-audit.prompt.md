@@ -24,6 +24,21 @@ permissions:
   issues: read
   pull-requests: read
   copilot-requests: write
+# The agent clones the target repo from github.com, so GitHub domains must be allowed.
+network:
+  allowed:
+    - defaults
+    - github
+# Keep the same safe outputs as before the gh-aw upgrade (one audit issue only).
+# report-failed-jobs is off because it can't recognise jobs inside reusable
+# workflows, so each of the three callers would open a duplicate issue.
+safe-outputs:
+  report-failed-jobs: false
+  threat-detection: false
+  missing-tool: false
+  missing-data: false
+  report-incomplete: false
+  noop: false
 ---
 # FDS Full-Stack Project Audit
 
