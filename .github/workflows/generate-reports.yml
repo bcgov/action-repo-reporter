@@ -52,7 +52,7 @@ jobs:
       target_repository: bcgov/actions
     secrets: inherit
 
-  # Downstream job that has contents: write to collect the reports and commit them
+  # Downstream job that collects the reports and opens or updates a single PR
   commit-reports:
     name: Collect and Commit Reports
     needs: [audit-quickstart-openshift, audit-pubcode, audit-actions]
@@ -60,6 +60,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - name: Checkout Central Reporting Repo
         uses: actions/checkout@v7
@@ -104,16 +105,13 @@ jobs:
                   print(f"Error processing {json_path}: {e}")
           '
 
-      - name: Commit and Push Reports
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add reports/
-          
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "chore: update code quality assessments"
-            git push origin HEAD
-          fi
+      - name: Open or Update Reports PR
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: chore/code-quality-reports
+          base: main
+          add-paths: reports/
+          commit-message: "chore: update code quality assessments"
+          title: "chore: update code quality assessments"
+          body: Automated code quality assessment reports from the Multi-Repo Code Quality Audits workflow.
+          delete-branch: true
