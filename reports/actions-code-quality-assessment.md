@@ -1,8 +1,8 @@
-Audit of bcgov/pubcode completed. Full report: `reports/pubcode-code-quality-assessment.md` (workflow run 39221544949).
+The FDS audit of bcgov/quickstart-openshift is complete. The report is at `reports/quickstart-openshift-code-quality-assessment.md`, and evidence is in `reports/audit_evidence.json`.
 
 Headline findings:
-- **High:** shared static API key guards write endpoints; hardcoded/default credentials in `docker-compose.yml` and Helm values; `secrets: inherit` on 3 workflow calls (including prod deploy); 27 GitHub-owned action refs on mutable tags.
-- **Medium:** stack differs from FDS (Node/Express/Mongoose, JS not TS); no frontend error boundary or React Query; non-atomic bulk load; `OC_TOKEN` interpolated into `run:`; no frontend unit tests.
-- **Low:** debug logging, dead code, module-level cache, unvalidated user URL fetch.
-
-Prioritised next steps: rotate and remove committed credentials, replace `secrets: inherit` with explicit secrets, SHA-pin actions, harden API key middleware.
+- **Stack mismatch:** the project uses NestJS and Prisma, not Spring Boot, and has no AuthContext, React Query or ErrorBoundary.
+- **Critical:** all API endpoints, including writes, are unauthenticated.
+- **High:** SQL parameters are logged, DTOs have no validation, and 15 actions are pinned to mutable tags.
+- **Medium and low:** wildcard CORS, `curl -k` in the health check, no global exception filter, and thin test coverage.
+- **Clean:** there is no `secrets: inherit`, no script injection, no workflow-level secrets, and all shell scripts use `set -euo pipefail`.
