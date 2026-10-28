@@ -1,7 +1,6 @@
 # Technical Review — QuickStart OpenShift
 
 **Project:** bcgov/quickstart-openshift
-**Date:** 2026-10-19
 **Prepared by:** FDS Code Quality Auditor (Automated)
 **Audience:** Director and above
 
