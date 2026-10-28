@@ -230,3 +230,4 @@ Write the report in the following format. Do not use numbered finding IDs, bulle
 
 When you have completed the report, review it for clarity and completeness. Ensure that each finding is supported by evidence from the codebase and that the recommended next steps are actionable and directly address the findings.
 1. Save the report inside the `reports/` folder of the current workspace, named after the target repository name (e.g. `reports/pubcode-code-quality-assessment.md` or `reports/actions-code-quality-assessment.md` or `reports/quickstart-openshift-code-quality-assessment.md`). Unconditionally overwrite and write the full, comprehensive Markdown report to this file even if a file already exists in the workspace.
+2. DO NOT create any GitHub issues or call the `create_issue` tool. Reports are reference assessments meant for interpretation, not actionable issues to be triaged. All reports are collected downstream into pull requests.
