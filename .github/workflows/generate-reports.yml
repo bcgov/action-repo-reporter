@@ -8,7 +8,7 @@ on:
 permissions:
   actions: read
   contents: write
-  issues: write
+  issues: read
   pull-requests: write
   copilot-requests: write
 
@@ -18,8 +18,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-      issues: write
-      pull-requests: write
+      issues: read
+      pull-requests: read
       copilot-requests: write
     uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
     with:
@@ -31,8 +31,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-      issues: write
-      pull-requests: write
+      issues: read
+      pull-requests: read
       copilot-requests: write
     uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
     with:
@@ -44,8 +44,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-      issues: write
-      pull-requests: write
+      issues: read
+      pull-requests: read
       copilot-requests: write
     uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
     with:
@@ -76,34 +76,8 @@ jobs:
           echo "=== Downloaded Artifact Files ==="
           find . -type f
           
-          # 1. Copy any explicitly named *-code-quality-assessment.md files if present
-          find . -name "*-code-quality-assessment.md" -exec cp -v {} reports/ \;
-          
-          # 2. Extract generated audit reports from gh-aw agent_output.json items
-          python3 -c '
-          import json, glob, os
-
-          mapping = {
-              "quickstart-openshift": "reports/quickstart-openshift-code-quality-assessment.md",
-              "pubcode": "reports/pubcode-code-quality-assessment.md",
-              "actions": "reports/actions-code-quality-assessment.md"
-          }
-
-          for json_path in glob.glob("./**/*-agent/agent_output.json", recursive=True):
-              try:
-                  with open(json_path) as f:
-                      data = json.load(f)
-                  for item in data.get("items", []):
-                      body = item.get("body", "")
-                      title = item.get("title", "")
-                      for key, target_path in mapping.items():
-                          if key in json_path.lower() or key in title.lower() or key in body.lower():
-                              with open(target_path, "w") as out:
-                                  out.write(body)
-                              print(f"Extracted {target_path} from {json_path}")
-              except Exception as e:
-                  print(f"Error processing {json_path}: {e}")
-          '
+          # Copy any explicitly named *-code-quality-assessment.md files from downloaded artifacts
+          find . -type f -name "*-code-quality-assessment.md" ! -path "./reports/*" -exec cp -vf {} reports/ \;
 
       - name: Open or Update Reports PR
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1

@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: ./scripts/audit-scan.sh [target_repository_directory]
 
 TARGET_DIR="${1:-.}"
-OUTPUT_DIR="reports"
+OUTPUT_DIR="${2:-/tmp/gh-aw/agent}"
 OUTPUT_FILE="${OUTPUT_DIR}/audit_evidence.json"
 
 mkdir -p "${OUTPUT_DIR}"

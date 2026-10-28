@@ -29,6 +29,14 @@ network:
   allowed:
     - defaults
     - github
+post-steps:
+  - name: Upload Assessment Report
+    if: always()
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+    with:
+      name: reports
+      path: reports/*-code-quality-assessment.md
+      if-no-files-found: ignore
 # Keep the same safe outputs as before the gh-aw upgrade (one audit issue only).
 # report-failed-jobs is off because it can't recognise jobs inside reusable
 # workflows, so each of the three callers would open a duplicate issue.
@@ -50,9 +58,9 @@ You are conducting a technical audit of the target repository: `${{ inputs.targe
 
 **Target Repository:** `${{ inputs.target_repository }}`
 **Project Directory:** `./target_repo`
-**Audit Evidence:** `reports/audit_evidence.json`
+**Audit Evidence:** `/tmp/gh-aw/agent/audit_evidence.json`
 
-Use `scripts/audit-scan.sh ./target_repo` to generate deterministic evidence in `reports/audit_evidence.json` before writing the report. Read actual source files to verify findings. Do not infer — verify.
+Use `scripts/audit-scan.sh ./target_repo` to generate deterministic evidence in `/tmp/gh-aw/agent/audit_evidence.json` before writing the report. Read actual source files to verify findings. Do not infer — verify.
 
 ---
 
@@ -214,11 +222,12 @@ Write the report in the following format. Do not use numbered finding IDs, bulle
 ## Before You Start
 
 1. Clone the target repository `${{ inputs.target_repository }}` into a local directory named `./target_repo` (e.g. run `git clone https://github.com/${{ inputs.target_repository }}.git ./target_repo`).
-2. Run the deterministic pre-audit scanner: `bash scripts/audit-scan.sh ./target_repo`. This populates structured evidence into `reports/audit_evidence.json`.
-3. Read `reports/audit_evidence.json` to inspect all deterministic findings across the 5 audit domains (CI/CD, Shell Scripts, Backend, Frontend, Security).
-4. Perform 1-turn report synthesis directly using `reports/audit_evidence.json` combined with any targeted source file reads to write the final director-level report.
+2. Run the deterministic pre-audit scanner: `bash scripts/audit-scan.sh ./target_repo`. This populates structured evidence into `/tmp/gh-aw/agent/audit_evidence.json`.
+3. Read `/tmp/gh-aw/agent/audit_evidence.json` to inspect all deterministic findings across the 5 audit domains (CI/CD, Shell Scripts, Backend, Frontend, Security).
+4. Perform 1-turn report synthesis directly using `/tmp/gh-aw/agent/audit_evidence.json` combined with any targeted source file reads to write the final director-level report.
 
 ## After is Complete
 
 When you have completed the report, review it for clarity and completeness. Ensure that each finding is supported by evidence from the codebase and that the recommended next steps are actionable and directly address the findings.
-1. Save the report inside the `reports/` folder of the current workspace, named after the target repository name (e.g. `reports/pubcode-code-quality-assessment.md` or `reports/actions-code-quality-assessment.md` or `reports/quickstart-openshift-code-quality-assessment.md`).
+1. Save the report inside the `reports/` folder of the current workspace, named after the target repository name (e.g. `reports/pubcode-code-quality-assessment.md` or `reports/actions-code-quality-assessment.md` or `reports/quickstart-openshift-code-quality-assessment.md`). Unconditionally overwrite and write the full, comprehensive Markdown report to this file even if a file already exists in the workspace.
+2. DO NOT create any GitHub issues or call the `create_issue` tool. Reports are reference assessments meant for interpretation, not actionable issues to be triaged. All reports are collected downstream into pull requests.
