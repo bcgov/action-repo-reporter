@@ -34,7 +34,7 @@ post-steps:
     if: always()
     uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
     with:
-      name: reports
+      name: ${{ needs.activation.outputs.artifact_prefix }}report
       path: reports/*-code-quality-assessment.md
       if-no-files-found: ignore
 # Keep the same safe outputs as before the gh-aw upgrade (one audit issue only).

@@ -1,4 +1,4 @@
-# Technical Review — QuickStart OpenShift
+# Technical Review — quickstart-openshift
 
 **Project:** bcgov/quickstart-openshift
 **Prepared by:** FDS Code Quality Auditor (Automated)
@@ -8,101 +8,91 @@
 
 ## Executive Summary
 
-QuickStart OpenShift is a deliberately small reference template: a NestJS 12 / Prisma 7 backend (`backend/src`, 13 top-level source files plus a `users` module whose service is 159 lines), a React/Vite frontend (about 170 lines across routes and components), and eleven GitHub Actions workflows that deploy to OpenShift. The most significant structural finding is that it does not follow the FDS stack standard at all. There is no Spring Boot, JPA, Lombok or OAuth2 resource server (the scanner found no `pom.xml`), and the frontend has no React Query, no `AuthContext`, and no ErrorBoundary components. Teams that fork the template inherit a different stack with no authentication layer, which has to be built from scratch.
+quickstart-openshift is a template repository, not a Spring Boot application. The backend is NestJS 12 with Prisma 7 and PostgreSQL (about 1,150 lines of TypeScript in `backend/src`, including specs), and the frontend is React with Vite and TanStack Router (about 460 lines). The FDS Spring Boot, Spring Data JPA, Lombok and OAuth2 resource server standards do not apply to it. They are recorded here as a structural deviation: a project cloned from this template starts outside the FDS stack standard.
 
-Three findings carry immediate operational risk. Every API endpoint, including create, update and delete on `/api/v1/users`, is reachable anonymously. The backend logs full SQL text and bound parameters for every query, so user names and emails land in application logs. Fifteen `uses:` references across six workflows are pinned to mutable tags (`actions/checkout@v7`, `actions/cache@v6`, `actions/stale@v11`, `github/codeql-action/upload-sarif@v4` and others), so a retargeted tag changes what runs in a pipeline that holds the OpenShift deploy token.
+The most significant operational risk is that the backend has no authentication or authorisation and no input validation. `UsersController` exposes create, update, delete and search endpoints on `users` with no guard, `app.enableCors()` allows every origin, and no `ValidationPipe` is registered. Any caller can create, change or delete user records, and the search endpoint passes a caller-supplied JSON filter (arbitrary keys and operators) straight into a Prisma `where` clause. The second risk is supply-chain exposure in CI: 15 uses of GitHub-owned actions are pinned to mutable major-version tags (`@v7`, `@v6`, `@v4`, `@v11`) rather than commit SHAs, while the third-party actions are correctly SHA-pinned. The third is a disabled TLS check in the integration-test health probe (`curl -k`).
 
-The remaining findings are maintenance debt: no request validation on DTOs, wildcard CORS, no global exception filter, a response interceptor that swallows errors, a `curl -k` health check, and a thin test base (one frontend test, no database-level tests). Strengths: no `secrets: inherit`, no workflow-level secret `env:`, no script-injection interpolations, `permissions: {}` at the top of every workflow, all four shell scripts use `set -euo pipefail`, and the third-party bcgov/aquasecurity/shrink actions are SHA-pinned.
+The remaining findings are maintenance debt: untyped `any` in the search service, error messages returned to callers from the delete path, response logging in the Axios interceptor, no frontend auth or React Query layer, and no database-backed integration test. The CI/CD pipeline is otherwise in good shape: no `secrets: inherit`, no workflow-level secrets, no direct interpolation of `head_ref`, `ref_name` or `actor` in `run:` blocks, and all shell scripts use `set -euo pipefail`.
 
 ---
 
 ## Security
 
-### All API endpoints are unauthenticated
+### Backend endpoints have no authentication or authorisation
 
-`backend/src/users/users.controller.ts` exposes `@Post()`, `@Put(':id')` and `@Delete(':id')` with no `@UseGuards`, no JWT validation and no role check. `app.module.ts` registers no global guard. Any caller with network access can create, modify or delete user records. The FDS standard requires JWT validation (Spring Security OAuth2 resource server on the Java stack) and `@PreAuthorize` on writes; the NestJS equivalent is absent. Add JWT validation as a global `APP_GUARD` with explicit `@Public()` exemptions for health and metrics, and require roles on write routes.
+`backend/src/users/users.controller.ts` defines `@Post()`, `@Put(':id')`, `@Delete(':id')`, `@Get()` and `@Get('search')` with no guard, and the application has no guard, JWT or OAuth2 module anywhere under `backend/src`. `bootstrap()` in `app.ts` calls `app.enableCors()` with no options, which accepts requests from any origin. The routes are published at `https://<app>.apps.silver.devops.gov.bc.ca/api/v1/users`, so any internet client can read every user's name and email and modify or delete them. As a template this is a reasonable starting point, but derived projects inherit it with no warning in code. Add a JWT guard (Passport JWT or an OIDC library against the BC Gov SSO realm), apply it globally, restrict CORS to the application origin, and document that the sample endpoints are unprotected.
 
-### SQL text and parameters are written to application logs
+### Search filter accepts caller-controlled Prisma queries
 
-`backend/src/prisma.service.ts` line 56 logs `` `Query: ${e.query} - Params: ${e.params} - Duration: ${e.duration}ms` `` for every query not matching the health-check exclusion list. Names and emails supplied through `POST /users` and the `like`/`eq` search filters are therefore stored in plain text in the log stream. Remove `Params` from the message, or log queries only at debug level in non-production environments.
+`UsersService.searchUsers` parses the `sort` and `filter` query strings with `JSON.parse` and feeds them to Prisma: `orderBy: sortObj` is used unvalidated, and `convertFiltersToPrismaFormat` uses `item.key` as a column name with no allow-list (`prismaFilterObj[item.key] = { contains: item.value }`). Callers can filter or sort on any field in the model, including future sensitive columns, and can send values of unexpected types (`in` with a non-array). A malformed filter fails inside Prisma and is thrown as a plain `Error('Invalid query parameters')`, which Nest returns as a 500. Restrict keys and operations to an allow-list, validate with a DTO, and return 400 for invalid input.
 
-### Wildcard CORS
+### No request validation
 
-`backend/src/app.ts` calls `app.enableCors()` with no options, which allows every origin. Combined with the missing authentication, any web page can call the API from a visitor's browser. Restrict origins to the deployed frontend host through configuration.
+`CreateUserDto` is `PickType(UserDto, ['email', 'name'])`, `main.ts` and `app.ts` register no `ValidationPipe`, and `class-validator` is not a dependency. The `id` path parameter is converted with `+id`, so `/users/abc` yields `NaN` passed to `new Prisma.Decimal(NaN)`. Register a global `ValidationPipe` with `whitelist: true`, add `class-validator` decorators to the DTOs, and use `ParseIntPipe` for ids.
 
-### TLS verification disabled in the integration health check
+### TLS verification disabled in integration-test health check
 
-`.github/workflows/reusable-tests.yml` line 45 runs `curl -k --connect-timeout 5 --max-time 10 -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/health" || true`. The check targets a deployed environment over HTTPS and accepts any certificate, so an invalid or expired certificate passes unnoticed. The `|| true` also converts curl failure into an empty status, which then fails the `[ "$status" -eq 200 ]` test with a shell error rather than a clear message. Remove `-k` and quote/default `status`.
+`.github/workflows/reusable-tests.yml` line 45 runs `curl -k --connect-timeout 5 --max-time 10 -s -o /dev/null -w "%{http_code}" "${BASE_URL}/api/health"`. The `-k` flag skips certificate validation. The target is a platform-issued route and the request carries no secret, so the exposure is low, but it hides certificate faults that the repository's own `cert-expiry.yml` workflow is meant to catch. Remove `-k`.
 
-### No hardcoded credentials found
+### Raw error messages returned to callers
 
-The scanner found no hardcoded secrets or token writes to browser storage, and no empty trust managers. No action required.
+`UsersService.remove` catches any error and returns `{ deleted: false, message: err.message }` with HTTP 200. Prisma error messages include model names, query arguments and constraint details. No global exception filter exists, so other errors surface as default Nest responses. Return a generic message, log the detail server-side, and map Prisma error codes (`P2025`, `P2002`) to 404 and 409 in an exception filter.
 
 ---
 
 ## Frontend
 
-### No shared authentication context, React Query layer or route guard
+### Axios interceptor logs response data and discards errors
 
-The scanner found no `AuthContext`/`useAuth`, no `@tanstack/react-query`, and no `ProtectedRoute`. `frontend/src/components/Dashboard.tsx` (96 lines) calls the API directly through the axios singleton in `service/api-service.ts`. This is consistent with an unauthenticated API but departs from the standard, so any team adding login has no sanctioned place to put it. Introduce React Query and a single `AuthContext` before the first authenticated feature is built.
+`frontend/src/service/api-service.ts` logs `console.info(`received response status: ${config.status} , data: ${config.data}`)` for every response, which writes API payloads (here, user names and emails) to the browser console and prints `[object Object]` because `config.data` is interpolated in a template string. The error handler calls `console.error(error)` and returns nothing, so rejected requests resolve as `undefined` and callers such as `Dashboard.tsx` receive no error. Remove the success log, and return `Promise.reject(error)` from the error handler.
 
-### API client swallows errors and logs response bodies
+### Data fetching and authentication are not on the FDS pattern
 
-`frontend/src/service/api-service.ts` registers a response interceptor whose error handler is `(error) => { console.error(error) }`. It returns nothing, so every failed request resolves as `undefined` and callers cannot distinguish failure from an empty result. The success handler logs `` `received response status: ${config.status} , data: ${config.data}` `` to the browser console, which will expose payloads (and user data) once real data or tokens flow through the client. Return `Promise.reject(error)` from the error handler and remove the payload logging.
+The frontend has no React Query, no `AuthContext` / `useAuth()` and no `ProtectedRoute`. `Dashboard.tsx` fetches `/v1/users` in a `useEffect`, copies the result into local state and swallows failures with `console.error(error)`, so users see an empty table on error. This matches the backend's lack of authentication. Adopt React Query for server state and add the auth context when the backend gains authentication.
 
-### Error handling is route-level only
+### Error handling is limited to the root route
 
-There are no `ErrorBoundary` components; `frontend/src/routes/__root.tsx` sets TanStack Router's `errorComponent`, which covers route render errors but not a failing component outside the router tree. This is partial coverage of the standard. Add an `ErrorBoundary` around the application root.
+`routes/__root.tsx` sets `errorComponent: ({ error }) => <ErrorComponent error={error} />`, which covers route-level render errors. There is no `ErrorBoundary` component around subtrees such as the dashboard table or the modal, and no handling for failed fetches. Add boundaries around data-driven subtrees.
 
-### Environment guards, CI flag and lint suppressions are clean
+### Generated route tree disables lint and type checks
 
-No `NODE_ENV` or `CI=false` usage was found (the build script is `vite build`). The only file-level suppressions are `/* eslint-disable */` and `// @ts-nocheck` in `frontend/src/routeTree.gen.ts`, a generated router file; this is acceptable but the file should be listed in the lint ignore config rather than carrying inline directives.
+`frontend/src/routeTree.gen.ts` starts with `/* eslint-disable */` and `// @ts-nocheck`. This is a TanStack Router generated file, excluded from Sonar and from coverage, and is not security-sensitive. No file-level suppressions exist elsewhere. Keep the exclusion limited to generated output. Findings that pass: no `localStorage` or `sessionStorage` use, no `CI=false`, `strict: true` in `tsconfig.json`, and no `NODE_ENV` guards.
 
 ---
 
 ## Backend
 
-### Stack differs from the FDS standard
+### Not a Spring Boot application
 
-The backend is NestJS with Prisma rather than Spring Boot with Spring Data JPA. Lombok, `@Transactional` and OAuth2 resource server checks do not apply; the equivalent controls (DI constructor injection, transactions, JWT guard) should be assessed against the NestJS stack. Constructor injection with `private readonly` is used consistently. Document the NestJS variant of the standard if this template is to remain in the portfolio.
+There is no `pom.xml`. The backend is NestJS with Prisma (`backend/prisma/schema.prisma`) in place of Spring Boot, Spring Data JPA and Lombok. The equivalent concerns are met in different ways: Prisma provides the repository layer, TypeScript object literals replace getters and setters, and `@nestjs/config` and environment variables replace `application.yml`. This is a stack difference from the FDS standard and not a defect, but shared libraries, security configuration and developer skills do not transfer.
 
-### No input validation on DTOs
+### Multi-step and write operations have no transaction handling
 
-`backend/src/users/dto/user.dto.ts` declares `name!: string` and `email!: string` with only Swagger decorators, and `CreateUserDto` extends it. No `class-validator` decorators exist, `class-validator`/`class-transformer` are not in `package.json`, and `app.ts` never calls `useGlobalPipes(new ValidationPipe(...))`. Malformed email addresses and arbitrary field values reach the database unchecked. Add `class-validator` and a global `ValidationPipe` with `whitelist: true`.
+The service has three writes (`create`, `update`, `remove`), each a single Prisma call, so atomicity holds today. `searchUsers` runs `findMany` and `count` as two separate queries with the filter conversion repeated, so a concurrent write can return a total that does not match the page. Use `prisma.$transaction([...])` for the pair and as the pattern for derived projects.
 
-### Search endpoint passes caller-controlled keys to Prisma
+### Untyped and duplicated search logic
 
-`UsersService.searchUsers` parses `sort` and `filter` from query-string JSON and `convertFiltersToPrismaFormat` uses `item.key` as a Prisma field name without an allow-list; `sort` goes straight to `orderBy`. Callers can probe any column of the `users` model with any operator. Restrict keys to a fixed set of permitted fields. In the controller, `page` and `limit` arrive as strings (`isNaN` works by coercion) with no upper bound on `limit`, so a single request can request the entire table.
+`searchUsers` returns `Promise<any>`, declares `let sortObj: any`, and returns raw Prisma rows (`users`) rather than `UserDto` objects, so the search response has a different shape from the list endpoint. `convertFiltersToPrismaFormat` is a 10-branch if/else chain (about 30 lines) that is better as a lookup table. `UsersService` is 159 lines and has a single concern, so no oversized-service finding applies. `UsersController` uses `HttpException` for 400 and 404, but `update` and `remove` do not return 404 for an unknown id; `update` returns a 500 from Prisma.
 
-### Inconsistent error handling
+### Pagination count passes unused `orderBy`
 
-There is no global exception filter. `searchUsers` throws a plain `Error('Invalid query parameters')` for malformed JSON, which Nest returns as a 500 rather than a 400. `remove` catches all errors and returns `{ deleted: false, message }` with HTTP 200, and `update` on a missing id will surface a Prisma error as a 500. Add a global filter that maps Prisma `P2025` to 404 and validation failures to 400.
-
-### Dead branches and ID parsing
-
-`convertFiltersToPrismaFormat` is a ten-branch if/else chain that silently ignores unknown operations, and controllers convert ids with `+id` without validating, so `/users/abc` produces `NaN` queries. Use a lookup map and `ParseIntPipe`.
+`prisma.users.count({ orderBy: sortObj, where })` passes sort options to a count query, which is unnecessary work and a second place where unvalidated sort input reaches the database. Remove `orderBy` from the count call.
 
 ---
 
 ## CI/CD Pipelines
 
-### Fifteen action references use mutable tags
+### Actions pinned to mutable tags
 
-The scanner lists 15 unpinned references across `analysis.yml` (4), `reusable-tests.yml` (6), `scheduled.yml` (2), `cert-expiry.yml`, `release.yml` and `merge.yml` (1 each): `actions/checkout@v7`, `actions/setup-node@v7`, `actions/cache@v6`, `actions/upload-artifact@v7`, `actions/stale@v11` and `github/codeql-action/upload-sarif@v4`. The bcgov, trivy and docker-tag actions are already pinned to full SHAs with version comments, so the gap is limited to GitHub-owned actions. Pin them to SHAs and let Renovate (already configured in `renovate.json`) maintain the digests.
+15 `uses:` lines across 6 workflows reference mutable tags: `actions/checkout@v7` (8 uses in analysis, cert-expiry, reusable-tests, release, scheduled and merge), `actions/setup-node@v7` (2), `actions/cache@v6` (2), `actions/upload-artifact@v7` (1), `actions/stale@v11` (1) and `github/codeql-action/upload-sarif@v4` (2 in `analysis.yml`). Third-party actions (`bcgov/*`, `aquasecurity/trivy-action`, `shrink/actions-docker-registry-tag`) are SHA-pinned with a version comment, so only the GitHub-owned actions deviate. A moved tag would run new code with the repository's token. Pin these to SHAs; Renovate, which the repo already uses, can keep them current.
 
-### Deploy token reaches called workflows through explicit secrets only
+### Context values interpolated into shell
 
-Verified positives: no `secrets: inherit`, no secret at workflow-level `env:` (the only top-level `env:` holds `DOMAIN` and `PREFIX`), no `${{ github.head_ref }}`, `ref_name`, `actor` or `event.inputs` interpolation in `run:` blocks, and all workflows declare `permissions: {}` with per-job grants. No action required.
+No `github.head_ref`, `ref_name` or `actor` is interpolated in `run:` blocks. Two lower-risk interpolations remain: `scheduled.yml` line 61 uses `REPO="${{ github.event.repository.name }}"` and `reusable-deploy.yml` uses `-p NAME="${{ github.event.repository.name }}"` inside `run:`. Repository names are constrained by GitHub and are not attacker-controlled in practice, and `release.yml` already passes the tag through `env: RELEASE`. Move these to `env:` for consistency.
 
-### Health check retry loop is fragile
+### Items that meet the standard
 
-Beyond `-k`, the loop in `reusable-tests.yml` ignores curl failure with `|| true` and compares a possibly empty string numerically. The step does not use `set -euo pipefail` (GitHub's default `bash -e` shell applies). Declare `shell: bash` with `set -euo pipefail`, default `status=000`, and fail with a clear message after 30 attempts.
-
----
-
-## Testing and Observability
-
-The backend has unit specs for the controller, service, logger, Prisma service and middleware, plus one e2e spec; none exercise a real database, so Prisma query behaviour (filters, `P2025` errors) is untested. Coverage excludes only configs and spec files, and the Sonar run excludes `**/*spec.ts` and coverage output, so the data-access layer is not excluded and no thresholds were found lowered. The frontend has one test (`__tests__/Dashboard.tsx`, 9 lines) that checks a title renders; there are no tests for the API client, error states or hooks. Add error-path tests for `api-service.ts` and a database-backed integration suite.
+No workflow uses `secrets: inherit`; called workflows receive `db_password` and `oc_token` explicitly. No secret is set at workflow-level `env:` (the only top-level `env:` in `reusable-tests.yml` holds `DOMAIN` and `PREFIX`). `reusable-tests.yml` declares `permissions: {}`. All four setup scripts in `scripts/` begin with `set -euo pipefail`. No broken `curl` invocations were found.
 
 ---
 
@@ -110,31 +100,30 @@ The backend has unit specs for the controller, service, logger, Prisma service a
 
 | Area | Finding | Severity |
 |------|---------|----------|
-| Security | All API endpoints unauthenticated, including writes | Critical |
-| Security | SQL text and parameters logged for every query | High |
-| Security | Wildcard CORS | Medium |
-| Security | `curl -k` TLS bypass in integration health check | Medium |
-| Frontend | No AuthContext, React Query or route guard | Medium |
-| Frontend | Axios error interceptor swallows errors; response data logged | Medium |
-| Frontend | No ErrorBoundary component (router `errorComponent` only) | Low |
-| Backend | Stack does not match FDS Spring Boot standard | Medium |
-| Backend | No DTO validation, no global ValidationPipe | High |
-| Backend | Search filter keys and sort not allow-listed; unbounded `limit` | Medium |
-| Backend | No global exception filter; 500s and 200-on-failure delete | Medium |
-| Backend | Unvalidated id parsing, long if/else operator chain | Low |
-| CI/CD | 15 GitHub-owned actions pinned to mutable tags | High |
-| CI/CD | Health check loop ignores failures with `|| true` | Low |
-| Testing | No database-level tests; one 9-line frontend test | Medium |
+| Security | No authentication or authorisation on user endpoints; open CORS | High |
+| Security | Search filter and sort accept unvalidated caller-controlled Prisma input | High |
+| Security | No request validation (`ValidationPipe`, DTO validators, id parsing) | Medium |
+| Security | `curl -k` disables TLS verification in health check | Low |
+| Security | Raw Prisma error messages returned from delete | Medium |
+| Frontend | Axios interceptor logs payloads and swallows errors | Medium |
+| Frontend | No React Query, auth context or protected routes | Medium |
+| Frontend | No `ErrorBoundary` below root route | Low |
+| Frontend | `eslint-disable` / `@ts-nocheck` in generated route tree | Low |
+| Backend | Not Spring Boot; outside FDS stack standard | Medium |
+| Backend | Search count and query not in a transaction | Low |
+| Backend | `any` types, inconsistent search response, missing 404 on update/delete | Low |
+| CI/CD | 15 GitHub-owned action uses pinned to mutable tags | High |
+| CI/CD | `github.event.repository.name` interpolated in `run:` blocks | Low |
 
 ---
 
 ## Recommended Next Steps
 
-1. Add JWT validation as a global guard with role checks on POST, PUT and DELETE routes, closing the unauthenticated-API finding.
-2. Remove `Params` from the Prisma query log line in `prisma.service.ts` to stop user data entering logs.
-3. Pin the 15 mutable `uses:` references to commit SHAs and rely on Renovate for updates.
-4. Add `class-validator` DTO decorators and a global `ValidationPipe`, and allow-list search filter and sort keys with a capped `limit`.
-5. Add a global exception filter mapping Prisma and validation errors to 404/400 and make `remove` return proper status codes.
-6. Restrict CORS origins and remove `curl -k` from `reusable-tests.yml`.
-7. Fix the axios interceptor to reject errors and stop logging response bodies; add an `ErrorBoundary`.
-8. Add React Query and a single `AuthContext` before any authenticated UI is built, and add database-backed backend tests and frontend error-path tests.
+1. Add a global JWT guard to the backend and restrict CORS to the application origin, which closes the unauthenticated write access.
+2. Register a global `ValidationPipe`, add DTO validators and `ParseIntPipe`, and replace the search `filter` and `sort` parsing with an allow-listed DTO, which closes the injection-style and bad-input findings.
+3. Pin all `actions/*` and `github/codeql-action` references to commit SHAs, which closes the supply-chain finding.
+4. Add a global exception filter that maps Prisma errors to 400, 404 and 409 and stops returning raw messages from `remove`.
+5. Fix the Axios interceptor to stop logging response data and to reject on error, then move fetching to React Query with an `ErrorBoundary`.
+6. Remove `-k` from the health-check `curl` and move `github.event.repository.name` into `env:` in the two workflows.
+7. Wrap the search `findMany` and `count` in `$transaction`, type the return value as `UserDto`, and add a database-backed integration test (the current `backend/test` has one e2e spec, and unit tests mock Prisma).
+8. Decide whether derived projects are expected to follow the FDS Spring Boot standard; if so, document the NestJS template as an approved alternative stack or provide a Spring Boot variant.
