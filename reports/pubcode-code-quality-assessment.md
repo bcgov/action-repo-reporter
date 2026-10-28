@@ -1,162 +1,126 @@
 # Technical Review — pubcode
 
-**Project:** bcgov/pubcode — BCGov Public Code Metadata Tool
-**Prepared by:** Paulo Cruz
+**Project:** BC Gov Public Code (pubcode) — registry of `bcgovpubcode.yml` metadata, with API, form frontend and OpenShift deployment
+**Prepared by:** FDS Code Quality Auditor (Automated)
 **Audience:** Director and above
 
 ---
 
 ## Executive Summary
 
-The pubcode project is a Node.js/Express API backed by MongoDB and a React/Vite frontend. It does not follow the FDS Spring Boot stack standard — the backend is entirely JavaScript with no JVM components — which places it outside the FDS reference baseline on the backend. That gap is acknowledged here, and findings are evaluated against its own stack's best practices and the FDS frontend and CI/CD standards where they apply.
+pubcode is not built on the FDS stack. The API is Node.js 20+/Express 5 with Mongoose on MongoDB (about 990 lines across 15 source and test files), and the frontend is a 670-line plain JavaScript (JSX) Vite application with no TypeScript, no React Query and no auth context. There is no `pom.xml`, so the Spring Boot, JPA, Lombok and OAuth2 resource-server criteria cannot be met; they are reported as a structural divergence rather than as individual defects. The codebase is small and generally clean. Its risk is concentrated in the deployment pipeline.
 
-Three findings carry immediate operational risk. First, the MongoDB connection URI is assembled by string concatenation and logged to the application log on every startup, exposing the database password in plaintext to any log aggregation system. Second, the `softDeleteRepo` handler does not send any HTTP response when an exception is raised, leaving the caller indefinitely waiting. Third, the deploy workflow interpolates secret values — including `CHES_CLIENT_SECRET`, `DB_PWD`, and six others — directly into the `helm upgrade` command string inside a `run:` block, where they appear in the workflow's process list and runner logs. Together these three issues represent a credential exposure path, a reliability gap in the delete path, and a CI secrets-leakage risk.
+Three findings carry immediate operational risk. First, the reusable deploy workflow interpolates workflow inputs, including a pull-request branch name, directly into a shell script that runs with cluster credentials, and the same script prints the assembled helm parameters, which embed six secrets. Second, all three deployment workflows use `secrets: inherit`, so called workflows receive every repository secret. Third, the write endpoints are protected by a single shared static API key with no per-caller identity, and an unauthenticated diagnostic route and a 50 MB body limit sit in front of it.
 
-The remaining findings are maintenance debt: the absence of React Query or any caching layer in the frontend, no ErrorBoundary in the route tree, `secrets: inherit` propagation across two caller workflows, and several mutable action version pins. None of these are acute, but each raises the cost of future changes and the surface area for regressions.
+The remaining findings are maintenance debt: 27 third-party action references pinned to mutable tags, a module-level mutable cache, no frontend unit tests, no coverage gate, and dead code in the router and routes file.
 
 ---
 
 ## Security
 
-### Database credentials logged on every startup
+### Write endpoints rely on one shared static API key
 
-In `api/src/db/database.js` the connection URI is built by template literal and passed directly to `logger.info` before the connection is made:
+`POST /api/pub-code/bulk-load` and `DELETE /api/pub-code/:repo_name` are guarded by `isValidApiKey`, which compares the `X-API-KEY` header to `process.env.API_KEY` using `crypto.timingSafeEqual`. The comparison is implemented correctly and fails closed when the key is unset. The weakness is the model: one long-lived secret, no rotation mechanism, no per-caller identity and no audit trail of who deleted a record. The rate limiter is global (100 requests per minute per IP) rather than tighter on write routes, and `cors()` is applied with no origin restriction. Move to the organisation's OIDC/JWT service-account pattern, or at minimum support two concurrent keys for rotation and log the caller on writes.
 
-```js
-const connectionUri = `(redacted)
-logger.info(`connecting to mongodb on url: ${connectionUri}`);
-```
+### Unauthenticated diagnostic route and oversized request bodies
 
-Any log aggregation system (Splunk, OpenShift logging, CloudWatch) will receive and store the database password in plaintext. The fix is to log only the host and port — or to use a parsed URL object and omit the credential component entirely.
+`router.get("/ip/trace", ...)` returns `request.ip` to anyone and has no operational purpose in production. `app.js` sets `express.json({ limit: "50mb" })` and the same limit for urlencoded bodies; these parsers run before the API key check, so unauthenticated callers can make the server buffer and parse 50 MB payloads per request. Remove `/ip/trace`, and lower the limit (or apply the large limit only after authentication on `/bulk-load`).
 
-### Secrets interpolated as shell strings in the deploy workflow
+### Sensitive records and identifiers written to logs
 
-In `.github/workflows/.deploy.yml`, eight secrets are expanded as `${{ secrets.* }}` expressions directly inside the `helm upgrade` command string within a `run:` block:
+`softDeleteRepo` calls `console.info(pubcodeEntityFromDB)`, dumping the full database document to stdout, bypassing the Winston logger. `ches-service.js` and `connection.js` also use `console.log` / `console.error(SERVICE, e)`, where an Axios error object can include request headers (the OAuth bearer token). `database.js` logs the connection URI, which is safe because credentials are passed in options (the file comments this). Replace the `console.*` calls with the logger and log only identifiers and error messages.
 
-```yaml
-PARAMS="${{ inputs.release_name }} \
-  --set-string global.secrets.chesClientSecret=${{ secrets.CHES_CLIENT_SECRET }} \
-  --set-string global.secrets.databaseAdminPassword=${{ secrets.DB_PWD }} \
-  ...
-```
+### Error content emailed as raw HTML
 
-GitHub masks known secret values in logs, but the values are still present in the shell process arguments visible to other processes on the runner and in runner debug output. The correct pattern is to assign each secret to an `env:` variable at the step level and reference `$ENV_VAR` in the shell command. This keeps the values out of the argument list.
+In `pub-code-service.js` the bulk-load error path emails `error.message` and `repoWithErrors.join(",")` inside `<p>` tags without escaping. Repository names originate from the submitted payload, so an authenticated caller can inject HTML into notification email. Escape values before building the HTML body.
 
-### API key validated by inline string comparison, no constant-time check
+### No hardcoded credentials or TLS bypasses found
 
-The `POST /bulk-load` and `DELETE /:repo_name` routes validate the `X-API-KEY` header with a plain `===` comparison:
-
-```js
-if (req.header("X-API-KEY") && req.header("X-API-KEY") === process.env.API_KEY) {
-```
-
-JavaScript string equality is not guaranteed to be constant-time in all V8 execution paths. For an internal bulk-load key this is a low-probability risk, but the comparison should use a constant-time utility (e.g., `crypto.timingSafeEqual`) to eliminate the theoretical timing side-channel.
+The scanner found no committed credentials and no disabled certificate validation. `DB_USER` and `DB_PWD` default to the literal `"default"` in `database.js`; this works only against a local database but would silently run with weak credentials if the variables were missing in a deployed environment. Fail startup when these are unset outside local development.
 
 ---
 
 ## Frontend
 
-### No ErrorBoundary anywhere in the route tree
+### Platform divergence: plain JavaScript, no shared auth or data layer
 
-The entire application renders inside `<App />` with no `ErrorBoundary` wrapping any route subtree. An unhandled render error in any component — `Dashboard`, `FormComponent`, `EditForm`, `YamlDisplay` — will unmount the entire application and show a blank page with no user-facing explanation. React's `ErrorBoundary` (class component or a library wrapper) should wrap the route group rendered by `<AppRoutes />`.
+`frontend/package.json` has React 19 and `react-router`, with no TypeScript (`vite-env.d.ts` is the only `.ts` file), no `@tanstack/react-query`, no `ErrorBoundary` and no auth context. The application is a public form with no login, so the absence of `ProtectedRoute` and `useAuth()` is by design and not a defect. Data fetching is ad hoc: `EditForm.jsx` and `FormComponent.jsx` call `fetch` directly inside event handlers and effects, with `console.error` for failures. Adopt TypeScript strict mode and React Query when the next feature work is scheduled.
 
-### No shared auth context; application has no authentication layer
+### No error boundary around route subtrees
 
-The frontend has no `AuthContext`, no `useAuth` hook, no `ProtectedRoute`, and no token management of any kind. All routes are publicly accessible. Whether this is intentional (the tool is intended to be open) or an omission is not stated in the source. If any route is meant to be restricted, the mechanism does not exist and must be built from scratch.
+`routes/index.jsx` renders all six routes with no `ErrorBoundary`. A render exception in the form (`@rjsf`) or Power BI embed unmounts the whole application to a blank page. Wrap `<Routes>` in a boundary with a fallback.
 
-### No React Query; data fetching is ad-hoc fetch inside useEffect
+### Form state passed through router state, not storage
 
-The frontend uses bare `fetch` calls inside `useEffect` hooks — visible in `FormComponent.jsx` — with no shared loading/error state, no deduplication, no stale-while-revalidate, and no cache invalidation. The module-level `PUB_CODES` array in `api/src/services/cache-service.js` mirrors this pattern on the server side. React Query (or equivalent) should be introduced to give the frontend consistent loading, error, and refetch semantics.
+No use of `localStorage` or `sessionStorage` was found, and no tokens or JWT payloads are logged. Form data moves between `/edit`, `/form` and `/yaml` through `navigate(..., { state })`. `LeftDrawer.jsx` logs the click event with `console.log(event)` and `FormComponent.jsx` logs `typeof yaml`; these are debug leftovers and should be removed.
 
-### `CI=false` absent; build configuration is clean
+### Outbound fetches to user-supplied URLs
 
-The `frontend/package.json` build script is `"build": "vite build"` with no `CI=false` override. No file-level `eslint-disable` directives were found in frontend source files. These aspects are compliant with the FDS standard.
+`EditForm.jsx` rewrites a user-entered GitHub URL to `raw.githubusercontent.com` and fetches it, but only checks that the string contains `bcgovpubcode.yml`. A URL such as `https://example.com/?bcgovpubcode.yml` is fetched as given from the browser. Impact is limited to the user's own browser, but validate the host against `github.com` / `raw.githubusercontent.com` before fetching.
+
+### Runtime config and environment guard
+
+`env.js` merges `import.meta.env` with `window.config`, supplied by Caddy in production. No `process.env.NODE_ENV` guards exist, and there is no `CI=false` in the build. The Dockerfile `HEALTHCHECK` uses `curl -f http://localhost/:3001/health`; the URL is malformed (`/:3001`) and the final Caddy image is Alpine without `curl` installed, so the check cannot succeed. Correct to `http://localhost:3001/health` using `wget` or install `curl`.
 
 ---
 
 ## Backend
 
-### `softDeleteRepo` does not respond on exception
+### Platform divergence from Spring Boot
 
-The `softDeleteRepo` handler catches exceptions with `console.error` but does not send any response:
+There is no Maven build, Spring Boot parent, JPA, Lombok, `@Transactional` or OAuth2 resource server. The comparable concerns are handled as follows: Mongoose schema validation replaces entity constraints, and the API key middleware replaces JWT validation. The equivalent FDS-standard findings are therefore not applicable; migration would be a rewrite of roughly 500 lines of API logic rather than a refactor.
 
-```js
-} catch (e) {
-  console.error(e);
-}
-```
+### Bulk load is not atomic
 
-Any error on the delete path leaves the HTTP connection open until timeout. The caller (the scheduled `remove-deleted-pubcode` utility) will hang on that request. The catch block must send a `500` response.
+The doc comment on `insertOrUpdate` states it will "delete and add all these new in a single transaction", but the code runs `findOneAndReplace` once per record followed by `insertMany` for the remainder, with no Mongo session or transaction. A failure midway leaves the collection partially updated, and each record costs one round trip (sequential `await` in a loop). Use a MongoDB session transaction or `bulkWrite` with `upsert`, and correct the comment. Also `findOneAndReplace` is passed the raw `pubcode` object rather than the validated `entity`, so unknown fields bypass the schema's strict mode only if the replace path does not apply it; pass validated data.
 
-### `bulkLoad` fires and forgets the insert/update work
+### Duplicated error handling and unbounded in-memory cache
 
-The `bulkLoad` handler dispatches `insertOrUpdate` without `await` and immediately returns `200 OK`:
+`bulkLoad` and `readAll` each repeat a try/catch that emails `error.message` to recipients. `readAll` serves `cache-service.js`, whose module-level `let PUB_CODES = []` is replaced on a scheduled refresh. This is a legitimate single-process cache, but each replica holds its own copy and a failed refresh is only logged, so replicas can serve stale data indefinitely with no staleness metric. Extract an error-notification helper and expose cache age on `/metrics`.
 
-```js
-insertOrUpdate(payload, notInsertedArray).catch(async (error) => { ... });
-res.status(200).json({});
-```
+### Dead code and unrouted handlers
 
-The caller has no way to know whether the bulk load succeeded. Validation errors and database failures occur asynchronously after the `200` is already sent. The endpoint should either await the operation and return a meaningful status, or implement a job-queue pattern and expose a status endpoint.
+`findById` is exported but not mounted in `pubcode-router.js`, so it is unreachable. The `/health` handler returns a document count rather than a status, and runs a `countDocuments` against the database on every probe. `EMAIL_RECIPIENTS` is read once at module load, so changes need a restart. `cache-service.js` guards `PUB_CODES.length > 0` before clearing a value that is reassigned on the next line. Remove the unrouted handler and redundant branch.
 
-### No authentication on read endpoint; write protection is ad-hoc middleware
+### Global error handling is minimal
 
-`GET /pub-code` is publicly accessible with no authentication. Write operations (`POST /bulk-load`, `DELETE /:repo_name`) are guarded by an inline API key check duplicated across both route handlers rather than extracted as shared middleware. This duplication means any future endpoint that needs protection must remember to add the same check manually.
-
-### Stack is JavaScript/Node.js, not FDS Spring Boot standard
-
-The backend is Express 5 + Mongoose, not Spring Boot with `spring-boot-starter-parent`. There is no JPA, no Lombok, no `@Transactional`, no OAuth2 resource server. If this project is required to converge with the FDS standard, a full backend rewrite is needed. If it is intentionally a separate stack, that decision should be documented explicitly so the project is not evaluated against the JVM baseline in future audits.
+`app.js` has a 404 handler returning HTML but no Express error-handling middleware. Body-parser errors (malformed JSON, oversized payload) fall to Express's default handler, which returns an HTML page and, outside `NODE_ENV=production`, a stack trace. Add a JSON error middleware. Service functions already return generic "Internal server error" messages, so internals are not exposed through those paths.
 
 ---
 
 ## CI/CD Pipelines
 
-### `secrets: inherit` propagated in two caller workflows
+### Script injection and secret echo in the deploy workflow
 
-Both `merge.yml` and `pr-open.yml` call the deploy workflow with `secrets: inherit`:
+`.deploy.yml` builds its helm command inside the `commands:` input with direct `${{ }}` expansion: `${{ inputs.params }}`, `${{ inputs.release_name }}`, `${{ inputs.directory }}` and `${{ inputs.tag }}` are all substituted into shell text. In `pr-open.yml` the caller passes `--set-string global.env.VITE_SCHEMA_BRANCH=${{ github.event.pull_request.head.ref }}` unquoted through `params`. A branch name containing shell metacharacters (Git permits `;`, `$()` and backticks) executes in a step that holds the OpenShift token and the deployment secrets. The same step assembles `PARAMS` with `${{ secrets.CHES_CLIENT_SECRET }}`, `${{ secrets.DB_PWD }}` and four others, then runs `echo "PARAMS: $PARAMS"`, writing them to the job log (GitHub masks exact secret strings but not derived or encoded values). Pass inputs and secrets through `env:` and reference `"$VAR"`, remove the `echo "PARAMS"`, and supply secrets with `--set-file` or a values file instead of a command line.
 
-```yaml
-uses: ./.github/workflows/.deploy.yml
-secrets: inherit
-```
+### `secrets: inherit` on three deploy calls
 
-`secrets: inherit` passes every secret in the caller's context to the called workflow, including secrets the called workflow does not need. The deploy workflow explicitly names only eight secrets; all others should not be forwarded. Each `secrets:` block should enumerate only the secrets the called workflow actually consumes.
+`pr-open.yml` (line 48) and `merge.yml` (lines 75 and 98, TEST and PROD) call `.deploy.yml` with `secrets: inherit`. The called workflow uses `oc_token`, `EMAIL_RECIPIENTS`, `CHES_TOKEN_URL`, `CHES_CLIENT_ID`, `CHES_CLIENT_SECRET`, `CHES_API_URL`, `DB_PWD` and `POWERBI_URL`. List these explicitly under `secrets:`. The `pull_request` trigger also deploys on every PR, so a PR from a branch in the same repository has access to the deployment path; restrict by actor or require an approved environment for PR deploys.
 
-### Several actions pinned to mutable semver tags
+### Actions pinned to mutable tags
 
-The following `uses:` references use mutable version tags rather than immutable commit SHAs:
+The scanner found 27 `uses:` references on mutable tags: `actions/checkout@v7` (13), `actions/setup-node@v7` (6), `actions/cache@v6` (3), `actions/upload-artifact@v7` (1) and `github/codeql-action/upload-sarif@v4` (2), plus a Docker image that is digest-pinned and therefore compliant. All `bcgov/actions`, `bcgov/actions-openshift`, `shrink`, `softprops` and `TriPSs` references are already SHA-pinned with a version comment, so only first-party GitHub actions need conversion. Pin to SHAs and let Renovate (already configured) maintain them.
 
-- `actions/checkout@v7` (five occurrences across workflows)
-- `actions/setup-node@v7` (three occurrences, `scheduled.yml`)
-- `actions/cache@v6` (three occurrences, `scheduled.yml`)
-- `actions/upload-artifact@v7` (`.tests.yml`)
-- `github/codeql-action/upload-sarif@v4` (`analysis.yml`)
+### Positive controls
 
-Actions pinned by semver tag can be silently updated by the action publisher. All external actions should be pinned to a full commit SHA with the version noted in a comment, as is already done for `aquasecurity/trivy-action`, `shrink/actions-docker-registry-tag`, `bcgov/actions/pr-description-add`, and `bcgov/actions/builder-ghcr`.
+Every workflow sets `permissions: {}` at the top level and grants per-job permissions. No secrets are set at workflow `env:` level, none are passed in URLs or curl form fields, and the one inline shell block (`Smoke test`) uses `set -euo pipefail`. No standalone `.sh` scripts exist. Container images are tracked by PR number and promoted to `prod` only after PROD deploy succeeds, and the release is created last so failed deploys leave no tag.
 
-### `github.actor` interpolated directly into a shell `run:` block
+### Pipeline rollback behaviour
 
-In `scheduled.yml`, the `validate-ministry-list` job writes `github.actor` directly into the shell:
+`helm status ... | jq .info.status || true` tolerates a missing release but also hides real `helm`/`jq` failures, and the `helm rollback` path is based on a regex match against the status. Validate the exit code of `helm status` separately from "release not found".
 
-```yaml
-env:
-  ACTOR: ${{ github.actor }}
-run: |
-  git config --local user.name "$ACTOR"
-```
+---
 
-This particular instance is safe because the value is assigned to an `env:` variable before shell use. However, `.deploy.yml` interpolates `${{ inputs.release_name }}`, `${{ inputs.directory }}`, `${{ inputs.tag }}`, `${{ inputs.params }}`, and `${{ github.repository }}` directly into the shell command string. Workflow inputs are caller-controlled and can contain shell metacharacters. These should be assigned to step-level `env:` variables before use.
+## Testing and Observability
 
-### Scheduled crawler uses `oc login` with token in command argument
+### Test coverage is thin and not enforced
 
-In `scheduled.yml`:
+The API has three Node test files (about 257 lines) using `node --test`; they cover routes, bulk load and soft delete. They do not exercise `ches-service.js`, `cache-service.js`, the scheduler or the entity validation beyond what the routes touch. No coverage tool (`c8`, `nyc`, Sonar) is configured in any `package.json` or workflow, so no threshold exists to lower. The frontend has Cypress end-to-end specs for four pages but no unit tests, and no test covers error states such as a failed schema fetch. Add a coverage gate to the API test run and unit tests for the URL-rewrite logic in `EditForm.jsx`.
 
-```yaml
-run: |
-  oc login --token=${{ secrets.OC_TOKEN }} --server=${{ vars.OC_SERVER }}
-```
+### Metrics endpoint is unauthenticated
 
-The token is expanded as a `${{ }}` expression directly in the shell command, placing it in the process argument list. It should be exported as a step-level environment variable and referenced via `$OC_TOKEN`, or the `action-oc-runner` action should be used for the login step instead of the inline command, consistent with the deploy workflow.
+`/metrics` exposes default Prometheus process metrics without authentication on the public route. Restrict it at the ingress or network policy (`knp.yaml` exists) so only the monitoring namespace can reach it.
 
 ---
 
@@ -164,36 +128,37 @@ The token is expanded as a `${{ }}` expression directly in the shell command, pl
 
 | Area | Finding | Severity |
 |------|---------|----------|
-| Security | Database password logged in plaintext on startup | Critical |
-| CI/CD | Eight secrets expanded directly in `helm upgrade` shell string | High |
-| Backend | `softDeleteRepo` sends no response on exception | High |
-| Backend | `bulkLoad` fires and forgets; `200 OK` returned before work completes | High |
-| CI/CD | `secrets: inherit` in `merge.yml` and `pr-open.yml` | High |
-| CI/CD | Five action families pinned to mutable semver tags | High |
-| CI/CD | Workflow inputs interpolated into shell strings without env assignment | High |
-| Security | API key compared with plain `===`, not constant-time | Medium |
-| Frontend | No `ErrorBoundary` wrapping route subtrees | Medium |
-| Frontend | No React Query; bare `fetch` in `useEffect` with no shared cache | Medium |
-| Backend | No authentication on public `GET /pub-code` read endpoint | Medium |
-| Backend | API key guard duplicated across two route handlers | Low |
-| Backend | Stack is Node.js/Express, not FDS Spring Boot standard | Low (informational) |
+| CI/CD | Deploy workflow interpolates inputs (incl. PR branch name) into shell with cluster credentials | High |
+| CI/CD | Deploy script echoes helm parameters containing six secrets | High |
+| CI/CD | `secrets: inherit` on three deploy calls | High |
+| CI/CD | 27 first-party actions pinned to mutable tags | Medium |
+| Security | Single shared static API key guards all writes | Medium |
+| Security | Unauthenticated `/ip/trace`; 50 MB body parsing before auth | Medium |
+| Security | `console.*` logging of DB documents and Axios errors | Medium |
+| Security | Unescaped values in error emails | Low |
+| Security | `"default"` DB credential fallbacks | Low |
+| Backend | Bulk load not transactional despite documentation | Medium |
+| Backend | No JSON error middleware; HTML/stack traces on parse errors | Low |
+| Backend | Dead handler, duplicated error handling, per-replica cache without staleness metric | Low |
+| Backend | Not on the FDS Spring Boot stack | Medium |
+| Frontend | Plain JS, no TypeScript, no React Query | Medium |
+| Frontend | No ErrorBoundary on routes | Medium |
+| Frontend | User-supplied URL fetched without host validation | Low |
+| Frontend | Malformed Dockerfile HEALTHCHECK with missing `curl` | Medium |
+| Frontend | Debug `console.log` leftovers | Low |
+| Testing | No coverage gate; no frontend unit tests | Medium |
+| Observability | `/metrics` exposed without authentication | Low |
 
 ---
 
 ## Recommended Next Steps
 
-1. **Remove the `logger.info` call that logs the MongoDB connection URI** in `api/src/db/database.js`. Log only the host and port. This closes the credential exposure on startup immediately without any architectural change.
-
-2. **Assign all `secrets.*` values to step-level `env:` variables in `.deploy.yml`** and replace the `${{ secrets.* }}` interpolations in the `helm upgrade` command with `$ENV_VAR` references. This prevents secret values from appearing in the shell process argument list and in any runner debug output.
-
-3. **Add a `500` response in the `softDeleteRepo` catch block** to close the hanging connection issue. The fix is a single `res.status(500).json({ message: "Internal server error" })` line.
-
-4. **Await `insertOrUpdate` in `bulkLoad`** and return a meaningful HTTP status reflecting the result, or explicitly document the fire-and-forget contract and expose a status mechanism. The current `200 OK` before any work is done prevents callers from detecting failures.
-
-5. **Replace `secrets: inherit` in `merge.yml` and `pr-open.yml`** with explicit `secrets:` blocks that name only the eight secrets consumed by `.deploy.yml`. This bounds the blast radius of any workflow compromise.
-
-6. **Pin all mutable action tags to full commit SHAs.** Run `gh api /repos/{owner}/{repo}/git/refs` or use the GitHub UI to obtain the SHA for each of: `actions/checkout@v7`, `actions/setup-node@v7`, `actions/cache@v6`, `actions/upload-artifact@v7`, `github/codeql-action/upload-sarif@v4`. Add the version as a comment beside each SHA.
-
-7. **Assign workflow inputs to step-level `env:` variables in `.deploy.yml`** before use in the shell body. Specifically: `inputs.release_name`, `inputs.directory`, `inputs.tag`, `inputs.params`, and `github.repository`. This eliminates the shell injection vector from caller-controlled values.
-
-8. **Wrap `<AppRoutes />` in an `ErrorBoundary`** in `App.jsx`. This is a one-component addition that prevents any render failure from blanking the entire page.
+1. Rewrite `.deploy.yml` so every `${{ }}` value goes through `env:` and is referenced as a quoted shell variable, remove `echo "PARAMS"`, and pass secrets by file; this closes the injection and secret-logging findings.
+2. Replace `secrets: inherit` with explicit `secrets:` mappings in `pr-open.yml` and `merge.yml`, and put PR deploys behind a protected environment.
+3. Remove `/ip/trace`, lower the body-size limits, add a JSON error middleware, and restrict `/metrics` at the network layer.
+4. Pin the 27 first-party action references to commit SHAs; Renovate will keep them current.
+5. Replace `console.*` calls with the logger, drop the full-document log in `softDeleteRepo`, and escape values in notification email.
+6. Make bulk load transactional with `bulkWrite` or a Mongo session, and fix the misleading comment.
+7. Add an `ErrorBoundary` to the route tree, validate the host in `EditForm.jsx`, and fix the frontend `HEALTHCHECK`.
+8. Introduce API and frontend coverage thresholds and unit tests for the URL-rewrite, cache and email code.
+9. Decide whether to migrate the API to Spring Boot and the frontend to TypeScript with React Query; this is a rewrite-scale effort, and the decision should be explicit rather than left as drift.
