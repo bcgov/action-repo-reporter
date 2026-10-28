@@ -46,7 +46,9 @@ safe-outputs:
   missing-tool: false
   missing-data: false
   report-incomplete: false
-  noop: false
+  report-failure-as-issue: false
+  noop:
+    report-as-issue: false
 ---
 # FDS Full-Stack Project Audit
 
