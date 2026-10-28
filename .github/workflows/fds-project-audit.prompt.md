@@ -158,13 +158,12 @@ Review every file under `.github/workflows/` and any `.sh` scripts they referenc
 
 ## Report Format
 
-Write the report in the following format. Do not use numbered finding IDs, bullet lists per finding, or "Evidence:" / "Recommended action:" labels. Each finding is a standalone section with a heading and narrative prose. Evidence is quoted inline; the recommendation is the closing paragraph of the section.
+Write the report in the following format. Do not use numbered finding IDs, bullet lists per finding, or "Evidence:" / "Recommended action:" labels. Do NOT include dates, review dates, or timestamps anywhere in the report (git history tracks revision times; embedding dates causes meaningless diff churn on recurring runs). Each finding is a standalone section with a heading and narrative prose. Evidence is quoted inline; the recommendation is the closing paragraph of the section.
 
 ```
 # Technical Review — [Project Name]
 
 **Project:** [Full project name]
-**Date:** [Today's date]
 **Prepared by:** FDS Code Quality Auditor (Automated)
 **Audience:** Director and above
 

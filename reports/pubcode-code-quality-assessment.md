@@ -1,7 +1,6 @@
 # Technical Review — pubcode
 
 **Project:** bcgov/pubcode — BCGov Public Code Metadata Tool
-**Date:** 2026-08-05
 **Prepared by:** Paulo Cruz
 **Audience:** Director and above
 
