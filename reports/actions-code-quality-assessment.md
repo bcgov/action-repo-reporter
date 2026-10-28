@@ -1,7 +1,6 @@
 # Technical Review — bcgov/actions
 
 **Project:** bcgov/actions (shared composite GitHub Actions: builder, diff-triggers, ghcr-cleanup, image-tracker, pr-validate, scan-url, test-and-analyse, workflow-notifier, workflow-results)
-**Date:** 2026-10-26
 **Prepared by:** FDS Code Quality Auditor (Automated)
 **Audience:** Director and above
 
