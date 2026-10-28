@@ -8,7 +8,7 @@ on:
 permissions:
   actions: read
   contents: write
-  issues: read
+  issues: write
   pull-requests: write
   copilot-requests: write
 
@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-      issues: read
+      issues: write
       pull-requests: read
       copilot-requests: write
     uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
@@ -31,7 +31,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-      issues: read
+      issues: write
       pull-requests: read
       copilot-requests: write
     uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
@@ -44,7 +44,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-      issues: read
+      issues: write
       pull-requests: read
       copilot-requests: write
     uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
