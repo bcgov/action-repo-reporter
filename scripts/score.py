@@ -7,7 +7,19 @@ import argparse, json, pathlib, sys
 W = {"Critical": 10, "High": 5, "Medium": 2, "Low": 1}
 
 def valid(ev, root):
-    p = root / ev.get("file", "")
+    """Cite must be a relative path that resolves (symlinks included) inside repo-dir."""
+    if not isinstance(ev, dict):
+        return False
+    f = ev.get("file")
+    if not isinstance(f, str) or not f or pathlib.PurePath(f).is_absolute() or ".." in pathlib.PurePath(f).parts:
+        return False
+    try:
+        base = root.resolve(strict=True)
+        p = (root / f).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False
+    if p != base and base not in p.parents or not p.is_file():
+        return False
     try:
         n = sum(1 for _ in p.open(errors="ignore"))
     except OSError:
@@ -31,6 +43,8 @@ def main():
     o = a.parse_args(); root = pathlib.Path(o.repo_dir)
     data = json.load(open(o.findings)); ok, bad = [], []
     for f in data.get("findings", []):
+        if not isinstance(f, dict):
+            bad.append(f); continue
         evs = f.get("evidence") or []
         (ok if evs and all(valid(e, root) for e in evs) and f.get("severity") in W else bad).append(f)
     fixed_raw = list(data.get("fixed") or []) + list(data.get("resolved") or [])
@@ -41,9 +55,9 @@ def main():
     score = min(100, sum(W[s] * c for s, c in counts.items()))
     satisfied = {f.get("id") for f in ok} | {e.get("id") for e in fixed_ok_list}
     missing = [r for r in o.require if r not in satisfied]
-    res = {"score": score, "counts": counts, "accepted": len(ok), "rejected": [f.get("id") for f in bad],
+    res = {"score": score, "counts": counts, "accepted": len(ok), "rejected": [f.get("id") if isinstance(f, dict) else None for f in bad],
            "fixed_accepted": [e.get("id") for e in fixed_ok_list],
-           "fixed_rejected": [e.get("id") for e in fixed_bad],
+           "fixed_rejected": [e.get("id") if isinstance(e, dict) else None for e in fixed_bad],
            "missing_required": missing}
     pathlib.Path(o.out).parent.mkdir(parents=True, exist_ok=True); json.dump(res, open(o.out, "w"), indent=2)
     print(json.dumps(res, indent=2)); sys.exit(1 if missing else 0)
