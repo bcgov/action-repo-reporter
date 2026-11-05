@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Collect security evidence for one repo using the caller's own gh auth (no GitHub App).
+# Usage: security-evidence.sh owner/repo [outdir] [ref]
+#   ref (optional): commit SHA, branch, or tag. Empty = tip (depth-1 clone).
+#   When set, clones then checks out that ref so ./target HEAD is the prove commit.
+set -uo pipefail
+REPO="$1"; OUT="${2:-evidence}"; REF="${3:-}"; mkdir -p "$OUT"
+
+if [ -d target ]; then
+  # Reuse only if target/ is the requested repo (and ref, when given); otherwise reject.
+  url="$(git -C target remote get-url origin 2>/dev/null || true)"
+  case "$url" in
+    *"github.com/$REPO"|*"github.com/$REPO.git"|*"github.com:$REPO"|*"github.com:$REPO.git") ;;
+    *) echo "ERROR: existing target/ origin '$url' != $REPO; remove target/ and retry" >&2; exit 1 ;;
+  esac
+  if [ -n "$REF" ]; then
+    git -C target fetch --depth 1 origin "$REF" || exit 1
+    git -C target checkout --detach FETCH_HEAD || exit 1
+  fi
+else
+  if [ -n "$REF" ]; then
+    # Enough history for a specific SHA/branch/tag — depth-1 tip alone cannot reach old SHAs.
+    gh repo clone "$REPO" target -- --no-checkout || exit 1
+    git -C target fetch --depth 1 origin "$REF" || exit 1
+    git -C target checkout --detach FETCH_HEAD || exit 1
+  else
+    gh repo clone "$REPO" target -- --depth 1 || exit 1
+  fi
+fi
+echo "target HEAD: $(git -C target rev-parse HEAD) (wanted: ${REF:-tip})"
+
+api() { # name endpoint ; failures (403/404) -> empty list + note
+  # --paginate emits one JSON array per page; --slurp + add merges them into a single array.
+  # pipefail makes a gh failure fail the whole pipeline.
+  if ! gh api --paginate "$2" 2> "$OUT/$1.err" | jq -s 'add // []' > "$OUT/$1.json"; then
+    echo '[]' > "$OUT/$1.json"; echo "WARN: $1 unavailable: $(head -c 200 "$OUT/$1.err")" >&2
+  fi; rm -f "$OUT/$1.err"
+}
+api dependabot     "repos/$REPO/dependabot/alerts?state=open&per_page=100"
+api code-scanning  "repos/$REPO/code-scanning/alerts?state=open&per_page=100"
+api secret-scanning-raw "repos/$REPO/secret-scanning/alerts?state=open&per_page=100"
+# Redact plaintext secrets before any agent sees them.
+# Fail closed: raw file is always removed; on any jq error no partial output is kept and we exit.
+if ! jq -e '[ .[] | del(.secret) | .secret = "REDACTED" ]' "$OUT/secret-scanning-raw.json" > "$OUT/secret-scanning.json.tmp"; then
+  rm -f "$OUT/secret-scanning-raw.json" "$OUT/secret-scanning.json.tmp" "$OUT/secret-scanning.json"
+  echo "ERROR: secret-scanning redaction failed; aborting" >&2; exit 1
+fi
+rm -f "$OUT/secret-scanning-raw.json"; mv "$OUT/secret-scanning.json.tmp" "$OUT/secret-scanning.json"
+
+run() { command -v "$1" >/dev/null || { echo "WARN: $1 not installed" >&2; echo '{}' > "$OUT/$1.json"; return; }; shift; "$@" || true; }
+run semgrep  semgrep scan --config auto --json -o "$OUT/semgrep.json" target
+run gitleaks gitleaks detect -s target --redact --report-format json --report-path "$OUT/gitleaks.json" --no-banner
+run osv-scanner sh -c "osv-scanner --format json -r target > '$OUT/osv-scanner.json'"
+run trivy    trivy fs --scanners vuln,misconfig --format json -o "$OUT/trivy.json" target
+echo "Evidence in $OUT/"; ls -la "$OUT"

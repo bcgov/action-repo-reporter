@@ -1,9 +1,15 @@
-name: Multi-Repo Code Quality Audits
+name: Multi-Repo Rapid Security Assessments
 
+# Single report pipeline. Each job calls the reusable gh-aw rapid-security
+# assessment once per target (workflow_call + target_repository string), then
+# commit-reports collects artifacts and opens/updates one reports PR.
+# Replaces the former weekly FDS code-quality audit (fds-project-audit.prompt)
+# — FDS stack checks are folded into the rapid-security prompt. Existing
+# reports/*-code-quality-assessment.md history is left in place.
 on:
   schedule:
-    - cron: '0 8 * * 1' # Runs at 8:00 AM UTC every Monday
-  workflow_dispatch: # Allows manual trigger
+    - cron: '0 14 1 * *' # 1st of month 14:00 UTC (off the old Monday 08:00 UTC slot)
+  workflow_dispatch:
 
 permissions:
   actions: read
@@ -13,49 +19,70 @@ permissions:
   copilot-requests: write
 
 jobs:
-  audit-quickstart-openshift:
-    name: Audit quickstart-openshift
+  assess-nr-fom:
+    name: Assess nr-fom
     permissions:
       contents: read
       actions: read
       issues: write
-      pull-requests: read
       copilot-requests: write
-    uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
+    uses: ./.github/workflows/rapid-security-assessment.prompt.lock.yml
     with:
-      target_repository: bcgov/quickstart-openshift
+      target_repository: bcgov/nr-fom
     secrets: inherit
 
-  audit-pubcode:
-    name: Audit pubcode
+  assess-nr-hydrometric-rating-curve:
+    name: Assess nr-hydrometric-rating-curve
     permissions:
       contents: read
       actions: read
       issues: write
-      pull-requests: read
       copilot-requests: write
-    uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
+    uses: ./.github/workflows/rapid-security-assessment.prompt.lock.yml
+    with:
+      target_repository: bcgov/nr-hydrometric-rating-curve
+    secrets: inherit
+
+  assess-nr-results-exam:
+    name: Assess nr-results-exam
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+      copilot-requests: write
+    uses: ./.github/workflows/rapid-security-assessment.prompt.lock.yml
+    with:
+      target_repository: bcgov/nr-results-exam
+    secrets: inherit
+
+  assess-nr-seedtransfer-map:
+    name: Assess nr-seedtransfer-map
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+      copilot-requests: write
+    uses: ./.github/workflows/rapid-security-assessment.prompt.lock.yml
+    with:
+      target_repository: bcgov/nr-seedtransfer-map
+    secrets: inherit
+
+  assess-pubcode:
+    name: Assess pubcode
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+      copilot-requests: write
+    uses: ./.github/workflows/rapid-security-assessment.prompt.lock.yml
     with:
       target_repository: bcgov/pubcode
     secrets: inherit
 
-  audit-actions:
-    name: Audit actions
-    permissions:
-      contents: read
-      actions: read
-      issues: write
-      pull-requests: read
-      copilot-requests: write
-    uses: ./.github/workflows/fds-project-audit.prompt.lock.yml
-    with:
-      target_repository: bcgov/actions
-    secrets: inherit
-
-  # Downstream job that collects the reports and opens or updates a single PR
+  # Collect per-repo artifacts and open or update a single reports PR
   commit-reports:
     name: Collect and Commit Reports
-    needs: [audit-quickstart-openshift, audit-pubcode, audit-actions]
+    needs: [assess-nr-fom, assess-nr-hydrometric-rating-curve, assess-nr-results-exam, assess-nr-seedtransfer-map, assess-pubcode]
     if: always()
     runs-on: ubuntu-24.04
     permissions:
@@ -67,25 +94,36 @@ jobs:
 
       - name: Download All Artifacts
         uses: actions/download-artifact@v8
+        with:
+          pattern: "*rapid-security"
+          path: artifacts
 
       - name: Organize Reports
         run: |
           set -euo pipefail
-          mkdir -p reports
-          
-          echo "=== Downloaded Artifact Files ==="
-          find . -type f
-          
-          # Copy any explicitly named *-code-quality-assessment.md files from downloaded artifacts
-          find . -type f -name "*-code-quality-assessment.md" ! -path "./reports/*" -exec cp -vf {} reports/ \;
+          find artifacts -type f | sort
+          # Each artifact holds one target's reports/; key by findings.json repository.
+          for f in $(find artifacts -type f -path "*/reports/findings.json"); do
+            dir="$(dirname "$f")"
+            repo="$(jq -r '.repository // empty' "$f")"
+            name="${repo##*/}"
+            if [ -z "$name" ] || ! printf '%s' "$name" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+              echo "::warning::skipping $f (bad repository field)"; continue
+            fi
+            out="reports/rapid-security/$name"
+            mkdir -p "$out"
+            for g in findings.json score.json rapid-security-assessment.md; do
+              [ -f "$dir/$g" ] && cp -vf "$dir/$g" "$out/$g"
+            done
+          done
 
       - name: Open or Update Reports PR
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
-          branch: chore/code-quality-reports
+          branch: chore/rapid-security-reports
           base: main
           add-paths: reports/
-          commit-message: "chore: update code quality assessments"
-          title: "chore: update code quality assessments"
-          body: Automated code quality assessment reports from the Multi-Repo Code Quality Audits workflow.
+          commit-message: "chore: update rapid security assessments"
+          title: "chore: update rapid security assessments"
+          body: Automated rapid security assessment reports from the Multi-Repo Rapid Security Assessments workflow.
           delete-branch: true
