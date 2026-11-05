@@ -77,7 +77,7 @@ safe-outputs:
 ---
 # Rapid Security Assessment (prototype)
 
-Target: `${{ inputs.target_repository || 'bcgov/nr-fom' }}` at ref `${{ inputs.target_ref || (github.event_name == 'pull_request' && '70555fd87a88c4c1d2008b868d345d9eaa8c67f1') || 'tip' }}`, checked out at `./target`. Pre-collected evidence is in `./evidence/`
+Target: `${{ inputs.target_repository || 'bcgov/nr-fom' }}`, checked out at `./target` (optional `target_ref`; temporary PR path defaults to EY-era `70555fd87a88c4c1d2008b868d345d9eaa8c67f1`). Pre-collected evidence is in `./evidence/`
 (`dependabot.json`, `code-scanning.json`, `secret-scanning.json` (values REDACTED), `semgrep.json`, `gitleaks.json`,
 `osv-scanner.json`, `trivy.json`). Evidence files may be empty if a source was unavailable; note that in `coverage_gaps`.
 
