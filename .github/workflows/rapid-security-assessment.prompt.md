@@ -2,6 +2,7 @@
 # PROTOTYPE — intended end state is dispatch-only. TEMPORARY pull_request trigger
 # exists only so the workflow can run from a PR branch (workflow_dispatch is invisible
 # until the workflow file is on the default branch). Strip pull_request before Ready/merge.
+# Also strip the hardcoded EY-era TARGET_REF default used on the PR path once prove passes.
 # Recompile with `gh aw compile` after edits.
 engine: copilot
 concurrency:
@@ -19,6 +20,10 @@ on:
         default: bcgov/nr-fom
         type: choice
         options: [bcgov/nr-fom]
+      target_ref:
+        description: "Commit/branch/tag of target (empty = tip). For AUTH-001+CRYPTO-001 prove use 70555fd87a88c4c1d2008b868d345d9eaa8c67f1"
+        required: false
+        type: string
 permissions:
   contents: read
   copilot-requests: write
@@ -46,7 +51,11 @@ steps:
       GH_TOKEN: ${{ github.token }}
       # PR trigger has no workflow_dispatch inputs — default to the prototype target.
       TARGET_REPOSITORY: ${{ inputs.target_repository || 'bcgov/nr-fom' }}
-    run: bash scripts/security-evidence.sh "$TARGET_REPOSITORY" evidence
+      # Empty REF = tip. TEMPORARY: on pull_request, default to EY-era / pre-nr-fom#1223
+      # tip (70555fd…) so PR CI proves AUTH-001+CRYPTO-001 go/no-go without dispatch.
+      # Strip this hardcoded EY default (keep optional target_ref) before Ready/merge.
+      TARGET_REF: ${{ inputs.target_ref || (github.event_name == 'pull_request' && '70555fd87a88c4c1d2008b868d345d9eaa8c67f1') || '' }}
+    run: bash scripts/security-evidence.sh "$TARGET_REPOSITORY" evidence "$TARGET_REF"
 post-steps:
   - name: Validate and score findings
     if: always()
@@ -68,7 +77,7 @@ safe-outputs:
 ---
 # Rapid Security Assessment (prototype)
 
-Target: `${{ inputs.target_repository || 'bcgov/nr-fom' }}`, checked out at `./target`. Pre-collected evidence is in `./evidence/`
+Target: `${{ inputs.target_repository || 'bcgov/nr-fom' }}` at ref `${{ inputs.target_ref || (github.event_name == 'pull_request' && '70555fd87a88c4c1d2008b868d345d9eaa8c67f1') || 'tip' }}`, checked out at `./target`. Pre-collected evidence is in `./evidence/`
 (`dependabot.json`, `code-scanning.json`, `secret-scanning.json` (values REDACTED), `semgrep.json`, `gitleaks.json`,
 `osv-scanner.json`, `trivy.json`). Evidence files may be empty if a source was unavailable; note that in `coverage_gaps`.
 
@@ -81,9 +90,13 @@ TLS), INFRA (Dockerfiles, Helm/OpenShift manifests, GitHub Actions: pinning, per
 DATA (PII logging, error leakage), API (validation, rate limiting, mass assignment).
 
 ## Go/no-go seed (prototype vs bcgov/nr-fom)
-Confirm or refute with cite-or-ask — score gate requires both IDs accepted:
+Confirm or refute with cite-or-ask — score gate requires both IDs accepted.
+These seed findings exist on the EY-era / pre-nr-fom#1223 commit `70555fd87a88c4c1d2008b868d345d9eaa8c67f1`
+(the temporary PR-path default). On tip they may already be fixed — cite-or-ask still applies; do not invent.
 - **AUTH-001** — JWT algorithm confusion (e.g. `alg=none` / HS256 accepted where RS256 is expected) in token verification.
-- **CRYPTO-001** — `defaultkey` (or similarly guessable) encryption-key fallback for data at rest.
+  Start at `api/src/core/security/auth.service.ts`: look for `verify(...)` calls that omit an `algorithms:` pin.
+- **CRYPTO-001** — `defaultkey` (or similarly guessable) encryption-key fallback for data at rest
+  (e.g. `api/src/app/modules/public-comment/public-comment.service.ts`).
 If confirmed, use those exact IDs with valid `file:line` evidence under `./target`. If not confirmable, put doubts in `questions` (do not invent).
 
 ## Cite-or-ask rule

@@ -1,9 +1,22 @@
 #!/usr/bin/env bash
 # Collect security evidence for one repo using the caller's own gh auth (no GitHub App).
-# Usage: security-evidence.sh owner/repo [outdir]   (clones to ./target if missing)
+# Usage: security-evidence.sh owner/repo [outdir] [ref]
+#   ref (optional): commit SHA, branch, or tag. Empty = tip (depth-1 clone).
+#   When set, clones then checks out that ref so ./target HEAD is the prove commit.
 set -uo pipefail
-REPO="$1"; OUT="${2:-evidence}"; mkdir -p "$OUT"
-[ -d target ] || gh repo clone "$REPO" target -- --depth 1 || exit 1
+REPO="$1"; OUT="${2:-evidence}"; REF="${3:-}"; mkdir -p "$OUT"
+
+if [ ! -d target ]; then
+  if [ -n "$REF" ]; then
+    # Enough history for a specific SHA/branch/tag — depth-1 tip alone cannot reach old SHAs.
+    gh repo clone "$REPO" target -- --no-checkout || exit 1
+    git -C target fetch --depth 1 origin "$REF" || exit 1
+    git -C target checkout --detach FETCH_HEAD || exit 1
+  else
+    gh repo clone "$REPO" target -- --depth 1 || exit 1
+  fi
+fi
+echo "target HEAD: $(git -C target rev-parse HEAD) (wanted: ${REF:-tip})"
 
 api() { # name endpoint ; failures (403/404) -> empty list + note
   if ! gh api --paginate "$2" > "$OUT/$1.json" 2> "$OUT/$1.err"; then
