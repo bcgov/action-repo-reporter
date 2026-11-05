@@ -1,15 +1,27 @@
 name: Multi-Repo Rapid Security Assessments
 
-# Single report pipeline. Each job calls the reusable gh-aw rapid-security
-# assessment once per target (workflow_call + target_repository string), then
-# commit-reports collects artifacts and opens/updates one reports PR.
+# Single report pipeline. Selects the target set (all five by default, or an
+# optional repos filter), calls the reusable gh-aw rapid-security assessment
+# once per target, then commit-reports collects artifacts into
+# reports/rapid-security/<repo>/ and opens/updates one reports PR.
 # Replaces the former weekly FDS code-quality audit (fds-project-audit.prompt)
 # — FDS stack checks are folded into the rapid-security prompt. Existing
 # reports/*-code-quality-assessment.md history is left in place.
+#
+# User-facing entrypoint: this workflow only. The prompt is workflow_call-only.
 on:
   schedule:
     - cron: '0 14 1 * *' # 1st of month 14:00 UTC (off the old Monday 08:00 UTC slot)
   workflow_dispatch:
+    inputs:
+      repos:
+        description: >-
+          Optional comma-separated subset (owner/name or bare repo name).
+          Empty = all five (nr-fom, nr-hydrometric-rating-curve, nr-results-exam,
+          nr-seedtransfer-map, pubcode).
+        required: false
+        default: ""
+        type: string
 
 permissions:
   actions: read
@@ -19,8 +31,62 @@ permissions:
   copilot-requests: write
 
 jobs:
-  assess-nr-fom:
-    name: Assess nr-fom
+  select-targets:
+    name: Select targets
+    runs-on: ubuntu-24.04
+    outputs:
+      targets: ${{ steps.pick.outputs.targets }}
+      count: ${{ steps.pick.outputs.count }}
+    steps:
+      - name: Resolve target list
+        id: pick
+        env:
+          REPOS_INPUT: ${{ github.event.inputs.repos || '' }}
+        run: |
+          set -euo pipefail
+          ALL='["bcgov/nr-fom","bcgov/nr-hydrometric-rating-curve","bcgov/nr-results-exam","bcgov/nr-seedtransfer-map","bcgov/pubcode"]'
+          if [ -z "${REPOS_INPUT//[[:space:]]/}" ]; then
+            echo "targets=$ALL" >> "$GITHUB_OUTPUT"
+            echo "count=$(echo "$ALL" | jq 'length')" >> "$GITHUB_OUTPUT"
+            echo "Using full test set ($ALL)"
+            exit 0
+          fi
+          # Accept owner/name or bare name; normalize bare → bcgov/<name>.
+          selected="$(
+            printf '%s' "$REPOS_INPUT" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | awk '
+              NF {
+                if ($0 ~ /^[^\/]+\/[^\/]+$/) print $0
+                else if ($0 ~ /^[A-Za-z0-9._-]+$/) print "bcgov/" $0
+                else { print "BAD:" $0 > "/dev/stderr"; exit 1 }
+              }'
+          )"
+          # Keep only names that appear in ALL (by full slug or bare suffix).
+          targets="$(
+            echo "$ALL" | jq -c --arg raw "$(printf '%s' "$selected" | paste -sd, -)" '
+              ($raw | split(",") | map(select(length>0))) as $want
+              | map(select(
+                  . as $r
+                  | ($want | index($r) != null)
+                    or ($want | index($r | split("/")[1]) != null)
+                ))
+            '
+          )"
+          count="$(echo "$targets" | jq 'length')"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::repos filter matched nothing. Input='$REPOS_INPUT'. Allowed: $ALL"
+            exit 1
+          fi
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Selected $count target(s): $targets"
+
+  assess:
+    name: Assess ${{ matrix.target_repository }}
+    needs: select-targets
+    strategy:
+      fail-fast: false
+      matrix:
+        target_repository: ${{ fromJSON(needs.select-targets.outputs.targets) }}
     permissions:
       contents: read
       actions: read
@@ -28,61 +94,14 @@ jobs:
       copilot-requests: write
     uses: ./.github/workflows/rapid-security-assessment.prompt.lock.yml
     with:
-      target_repository: bcgov/nr-fom
+      target_repository: ${{ matrix.target_repository }}
     secrets: inherit
 
-  assess-nr-hydrometric-rating-curve:
-    name: Assess nr-hydrometric-rating-curve
-    permissions:
-      contents: read
-      actions: read
-      issues: write
-      copilot-requests: write
-    uses: ./.github/workflows/rapid-security-assessment.prompt.lock.yml
-    with:
-      target_repository: bcgov/nr-hydrometric-rating-curve
-    secrets: inherit
-
-  assess-nr-results-exam:
-    name: Assess nr-results-exam
-    permissions:
-      contents: read
-      actions: read
-      issues: write
-      copilot-requests: write
-    uses: ./.github/workflows/rapid-security-assessment.prompt.lock.yml
-    with:
-      target_repository: bcgov/nr-results-exam
-    secrets: inherit
-
-  assess-nr-seedtransfer-map:
-    name: Assess nr-seedtransfer-map
-    permissions:
-      contents: read
-      actions: read
-      issues: write
-      copilot-requests: write
-    uses: ./.github/workflows/rapid-security-assessment.prompt.lock.yml
-    with:
-      target_repository: bcgov/nr-seedtransfer-map
-    secrets: inherit
-
-  assess-pubcode:
-    name: Assess pubcode
-    permissions:
-      contents: read
-      actions: read
-      issues: write
-      copilot-requests: write
-    uses: ./.github/workflows/rapid-security-assessment.prompt.lock.yml
-    with:
-      target_repository: bcgov/pubcode
-    secrets: inherit
-
-  # Collect per-repo artifacts and open or update a single reports PR
+  # Collect per-repo artifacts and open or update a single reports PR.
+  # Fails loudly when nothing was organized — writing artifacts without a PR is not success.
   commit-reports:
     name: Collect and Commit Reports
-    needs: [assess-nr-fom, assess-nr-hydrometric-rating-curve, assess-nr-results-exam, assess-nr-seedtransfer-map, assess-pubcode]
+    needs: [select-targets, assess]
     if: always()
     runs-on: ubuntu-24.04
     permissions:
@@ -93,17 +112,22 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Download All Artifacts
+        continue-on-error: true
         uses: actions/download-artifact@v8
         with:
           pattern: "*rapid-security"
           path: artifacts
+          merge-multiple: false
 
       - name: Organize Reports
+        id: organize
         run: |
           set -euo pipefail
-          find artifacts -type f | sort
+          mkdir -p artifacts
+          find artifacts -type f 2>/dev/null | sort || true
+          organized=0
           # Each artifact holds one target's reports/; key by findings.json repository.
-          for f in $(find artifacts -type f -path "*/reports/findings.json"); do
+          while IFS= read -r -d '' f; do
             dir="$(dirname "$f")"
             repo="$(jq -r '.repository // empty' "$f")"
             name="${repo##*/}"
@@ -112,12 +136,27 @@ jobs:
             fi
             out="reports/rapid-security/$name"
             mkdir -p "$out"
+            copied=0
             for g in findings.json score.json rapid-security-assessment.md; do
-              [ -f "$dir/$g" ] && cp -vf "$dir/$g" "$out/$g"
+              if [ -f "$dir/$g" ]; then
+                cp -vf "$dir/$g" "$out/$g"
+                copied=1
+              fi
             done
-          done
+            if [ "$copied" -eq 1 ]; then
+              organized=$((organized + 1))
+            fi
+          done < <(find artifacts -type f -path "*/reports/findings.json" -print0 2>/dev/null || true)
+
+          echo "organized=$organized" >> "$GITHUB_OUTPUT"
+          echo "Organized $organized report set(s) under reports/rapid-security/"
+          if [ "$organized" -eq 0 ]; then
+            echo "::error::No rapid-security reports organized from artifacts — refusing to succeed (noop/artifact-only is not a publish)"
+            exit 1
+          fi
 
       - name: Open or Update Reports PR
+        id: cpr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           branch: chore/rapid-security-reports
@@ -127,3 +166,23 @@ jobs:
           title: "chore: update rapid security assessments"
           body: Automated rapid security assessment reports from the Multi-Repo Rapid Security Assessments workflow.
           delete-branch: true
+
+      - name: Require publish
+        run: |
+          set -euo pipefail
+          # peter-evans outputs: pull-request-number / pull-request-operation (created|updated|closed|false)
+          op="${{ steps.cpr.outputs.pull-request-operation }}"
+          num="${{ steps.cpr.outputs.pull-request-number }}"
+          organized="${{ steps.organize.outputs.organized }}"
+          echo "CPR operation=$op number=$num organized=$organized"
+          if [ -z "$num" ] || [ "$op" = "false" ] || [ -z "$op" ]; then
+            # No PR only acceptable when files already match main (updated content identical).
+            # If organize copied files but git has no diff, still OK — content already published.
+            if git diff --quiet HEAD -- reports/ && [ -z "$(git ls-files --others --exclude-standard reports/)" ]; then
+              echo "Reports already on main (no diff) — publish path satisfied."
+              exit 0
+            fi
+            echo "::error::create-pull-request did not open/update a PR (operation='$op') after organizing $organized report set(s)"
+            exit 1
+          fi
+          echo "Published via PR #$num ($op)"

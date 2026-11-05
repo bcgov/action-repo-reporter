@@ -1,0 +1,116 @@
+{
+  "repository": "bcgov/nr-fom",
+  "commit": "02d2cfc5fe6d60da7971bffa79b4569475495e39",
+  "findings": [
+    {
+      "id": "DEPS-001",
+      "domain": "DEPS",
+      "severity": "High",
+      "title": "joi 18.3.0 affected by GHSA-4528-x5fx-h6hg",
+      "evidence": [
+        {
+          "file": "package-lock.json",
+          "line": 12912,
+          "snippet": "node_modules/joi"
+        }
+      ],
+      "impact": "Known high-severity advisory in installed version (OSV scanner); reachability not assessed (basic-ftp/vite likely transitive/dev).",
+      "recommendation": "Upgrade to a patched version per advisory.",
+      "source": "osv-scanner"
+    },
+    {
+      "id": "DEPS-002",
+      "domain": "DEPS",
+      "severity": "High",
+      "title": "multer 2.4.0 affected by GHSA-q7qp-rjg7-q26m",
+      "evidence": [
+        {
+          "file": "package-lock.json",
+          "line": 13972,
+          "snippet": "node_modules/multer"
+        }
+      ],
+      "impact": "Known high-severity advisory in installed version (OSV scanner); reachability not assessed (basic-ftp/vite likely transitive/dev).",
+      "recommendation": "Upgrade to a patched version per advisory.",
+      "source": "osv-scanner"
+    },
+    {
+      "id": "DEPS-003",
+      "domain": "DEPS",
+      "severity": "High",
+      "title": "vite 8.3.0 affected by GHSA-587h-7wmj-h5pm",
+      "evidence": [
+        {
+          "file": "package-lock.json",
+          "line": 17583,
+          "snippet": "node_modules/vite"
+        }
+      ],
+      "impact": "Known high-severity advisory in installed version (OSV scanner); reachability not assessed (basic-ftp/vite likely transitive/dev).",
+      "recommendation": "Upgrade to a patched version per advisory.",
+      "source": "osv-scanner"
+    },
+    {
+      "id": "DEPS-004",
+      "domain": "DEPS",
+      "severity": "High",
+      "title": "basic-ftp 5.3.1 affected by GHSA-c475-qrg2-pj4r",
+      "evidence": [
+        {
+          "file": "package-lock.json",
+          "line": 8668,
+          "snippet": "node_modules/basic-ftp"
+        }
+      ],
+      "impact": "Known high-severity advisory in installed version (OSV scanner); reachability not assessed (basic-ftp/vite likely transitive/dev).",
+      "recommendation": "Upgrade to a patched version per advisory.",
+      "source": "osv-scanner"
+    },
+    {
+      "id": "CRYPTO-002",
+      "domain": "CRYPTO",
+      "severity": "Low",
+      "title": "Guessable DATA_ENCRYPTION_KEY=defaultkey in docker-compose",
+      "evidence": [
+        {
+          "file": "docker-compose.yml",
+          "line": 73,
+          "snippet": "- DATA_ENCRYPTION_KEY=defaultkey"
+        }
+      ],
+      "impact": "Local/dev compose uses a weak key; risk if compose config is reused beyond local development.",
+      "recommendation": "Use a generated per-developer key from .env and document it as dev-only.",
+      "source": "agent"
+    }
+  ],
+  "fixed": [
+    {
+      "id": "AUTH-001",
+      "file": "api/src/core/security/auth.service.ts",
+      "line": 160,
+      "snippet": "algorithms: ['RS256']",
+      "note": "ID token verify pinned to RS256"
+    },
+    {
+      "id": "AUTH-001",
+      "file": "api/src/core/security/auth.service.ts",
+      "line": 173,
+      "snippet": "algorithms: ['RS256']",
+      "note": "Access token verify pinned to RS256"
+    },
+    {
+      "id": "CRYPTO-001",
+      "file": "api/src/app/modules/public-comment/public-comment.service.ts",
+      "line": 42,
+      "snippet": "throw new Error('DATA_ENCRYPTION_KEY environment variable must be set.');",
+      "note": "Fail-closed when key unset; no default fallback"
+    }
+  ],
+  "questions": [],
+  "coverage_gaps": [
+    "code-scanning, dependabot, secret-scanning, gitleaks evidence empty (unavailable); semgrep.json missing",
+    "Manual review limited to seed items and dependency evidence; INJ, CONFIG, INFRA (workflows/Helm), DATA, API domains not exhaustively reviewed",
+    "Trivy results not triaged in detail; 2 non-seed OSV moderate/low omitted",
+    "Non-security stack currency not assessed"
+  ]
+}
