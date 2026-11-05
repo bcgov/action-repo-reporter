@@ -1,10 +1,16 @@
 ---
-# PROTOTYPE - dispatch-only. Recompile with `gh aw compile` after edits.
+# PROTOTYPE — intended end state is dispatch-only. TEMPORARY pull_request trigger
+# exists only so the workflow can run from a PR branch (workflow_dispatch is invisible
+# until the workflow file is on the default branch). Strip pull_request before Ready/merge.
+# Recompile with `gh aw compile` after edits.
 engine: copilot
 concurrency:
   group: "rapid-security-${{ github.run_id }}"
   job-discriminator: "${{ github.run_id }}"
 on:
+  # TEMPORARY — remove before Ready/merge (dispatch-only end state).
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       target_repository:
@@ -32,7 +38,8 @@ steps:
   - name: Collect security evidence (alerts via caller gh auth + local scanners)
     env:
       GH_TOKEN: ${{ github.token }}
-      TARGET_REPOSITORY: ${{ inputs.target_repository }}
+      # PR trigger has no workflow_dispatch inputs — default to the prototype target.
+      TARGET_REPOSITORY: ${{ inputs.target_repository || 'bcgov/nr-fom' }}
     run: bash scripts/security-evidence.sh "$TARGET_REPOSITORY" evidence
 post-steps:
   - name: Validate and score findings
@@ -55,7 +62,7 @@ safe-outputs:
 ---
 # Rapid Security Assessment (prototype)
 
-Target: `${{ inputs.target_repository }}`, checked out at `./target`. Pre-collected evidence is in `./evidence/`
+Target: `${{ inputs.target_repository || 'bcgov/nr-fom' }}`, checked out at `./target`. Pre-collected evidence is in `./evidence/`
 (`dependabot.json`, `code-scanning.json`, `secret-scanning.json` (values REDACTED), `semgrep.json`, `gitleaks.json`,
 `osv-scanner.json`, `trivy.json`). Evidence files may be empty if a source was unavailable; note that in `coverage_gaps`.
 
@@ -66,6 +73,12 @@ AUTH (authn/authz, JWT validation, algorithm pinning, session), CRYPTO (key mgmt
 INJ (SQL/command/template injection), SECRETS, DEPS (vulnerable deps, from evidence), CONFIG (CORS, headers, debug,
 TLS), INFRA (Dockerfiles, Helm/OpenShift manifests, GitHub Actions: pinning, permissions, pull_request_target),
 DATA (PII logging, error leakage), API (validation, rate limiting, mass assignment).
+
+## Go/no-go seed (prototype vs bcgov/nr-fom)
+Confirm or refute with cite-or-ask — score gate requires both IDs accepted:
+- **AUTH-001** — JWT algorithm confusion (e.g. `alg=none` / HS256 accepted where RS256 is expected) in token verification.
+- **CRYPTO-001** — `defaultkey` (or similarly guessable) encryption-key fallback for data at rest.
+If confirmed, use those exact IDs with valid `file:line` evidence under `./target`. If not confirmable, put doubts in `questions` (do not invent).
 
 ## Cite-or-ask rule
 Every finding MUST cite at least one `file:line` that exists in `./target` and contains the issue.
