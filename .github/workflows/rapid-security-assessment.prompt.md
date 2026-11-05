@@ -1,16 +1,11 @@
 ---
-# PROTOTYPE — intended end state is dispatch-only. TEMPORARY pull_request trigger
-# exists only so the workflow can run from a PR branch (workflow_dispatch is invisible
-# until the workflow file is on the default branch). Strip pull_request before Ready/merge.
+# PROTOTYPE — dispatch-only (workflow_dispatch).
 # Recompile with `gh aw compile` after edits.
 engine: copilot
 concurrency:
   group: "rapid-security-${{ github.run_id }}"
   job-discriminator: "${{ github.run_id }}"
 on:
-  # TEMPORARY — remove before Ready/merge (dispatch-only end state).
-  pull_request:
-    types: [opened, synchronize, reopened]
   workflow_dispatch:
     inputs:
       target_repository:
