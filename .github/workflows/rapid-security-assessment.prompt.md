@@ -9,11 +9,16 @@ on:
   workflow_dispatch:
     inputs:
       target_repository:
-        description: "Repo to assess (prototype: bcgov/nr-fom only)"
+        description: "Public repo to assess (EY rapid-assessment group)"
         required: true
         default: bcgov/nr-fom
         type: choice
-        options: [bcgov/nr-fom]
+        options:
+          - bcgov/nr-fom
+          - bcgov/nr-hydrometric-rating-curve
+          - bcgov/nr-results-exam
+          - bcgov/nr-seedtransfer-map
+          - bcgov/pubcode
 permissions:
   contents: read
   copilot-requests: write
@@ -46,7 +51,16 @@ steps:
 post-steps:
   - name: Validate and score findings
     if: always()
-    run: python3 scripts/score.py reports/findings.json --repo-dir target --out reports/score.json --require AUTH-001 CRYPTO-001
+    env:
+      TARGET_REPOSITORY: ${{ inputs.target_repository || 'bcgov/nr-fom' }}
+    run: |
+      set -euo pipefail
+      # AUTH-001/CRYPTO-001 go/no-go seeds are nr-fom specific.
+      require=()
+      if [ "$TARGET_REPOSITORY" = "bcgov/nr-fom" ]; then
+        require=(--require AUTH-001 CRYPTO-001)
+      fi
+      python3 scripts/score.py reports/findings.json --repo-dir target --out reports/score.json "${require[@]}"
   - name: Upload assessment
     if: always()
     uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -76,7 +90,10 @@ INJ (SQL/command/template injection), SECRETS, DEPS (vulnerable deps, from evide
 TLS), INFRA (Dockerfiles, Helm/OpenShift manifests, GitHub Actions: pinning, permissions, pull_request_target),
 DATA (PII logging, error leakage), API (validation, rate limiting, mass assignment).
 
-## Go/no-go seed (prototype vs bcgov/nr-fom)
+## Go/no-go seed (ONLY when target is `bcgov/nr-fom`)
+For any other target, skip this section entirely: there are no seed IDs, do not create AUTH-001/CRYPTO-001 by
+analogy — just review the domains above and number findings per domain as usual.
+
 Confirm or refute with cite-or-ask — score gate requires each ID either as an accepted open finding **or** as
 confirmed-fixed with a valid `file:line` cite under `./target` (put confirmed fixes in `fixed`, not only `coverage_gaps`).
 Do not invent; if you cannot cite, put doubts in `questions`.
