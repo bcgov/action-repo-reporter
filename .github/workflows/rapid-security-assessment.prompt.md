@@ -2,7 +2,6 @@
 # PROTOTYPE — intended end state is dispatch-only. TEMPORARY pull_request trigger
 # exists only so the workflow can run from a PR branch (workflow_dispatch is invisible
 # until the workflow file is on the default branch). Strip pull_request before Ready/merge.
-# Also strip the hardcoded EY-era TARGET_REF default used on the PR path once prove passes.
 # Recompile with `gh aw compile` after edits.
 engine: copilot
 concurrency:
@@ -20,10 +19,6 @@ on:
         default: bcgov/nr-fom
         type: choice
         options: [bcgov/nr-fom]
-      target_ref:
-        description: "Commit/branch/tag of target (empty = tip). For AUTH-001+CRYPTO-001 prove use 70555fd87a88c4c1d2008b868d345d9eaa8c67f1"
-        required: false
-        type: string
 permissions:
   contents: read
   copilot-requests: write
@@ -50,12 +45,9 @@ steps:
     env:
       GH_TOKEN: ${{ github.token }}
       # PR trigger has no workflow_dispatch inputs — default to the prototype target.
+      # Always depth-1 tip of target (no historic SHA pin).
       TARGET_REPOSITORY: ${{ inputs.target_repository || 'bcgov/nr-fom' }}
-      # Empty REF = tip. TEMPORARY: on pull_request, default to EY-era / pre-nr-fom#1223
-      # tip (70555fd…) so PR CI proves AUTH-001+CRYPTO-001 go/no-go without dispatch.
-      # Strip this hardcoded EY default (keep optional target_ref) before Ready/merge.
-      TARGET_REF: ${{ inputs.target_ref || (github.event_name == 'pull_request' && '70555fd87a88c4c1d2008b868d345d9eaa8c67f1') || '' }}
-    run: bash scripts/security-evidence.sh "$TARGET_REPOSITORY" evidence "$TARGET_REF"
+    run: bash scripts/security-evidence.sh "$TARGET_REPOSITORY" evidence
 post-steps:
   - name: Validate and score findings
     if: always()
@@ -77,7 +69,7 @@ safe-outputs:
 ---
 # Rapid Security Assessment (prototype)
 
-Target: `${{ inputs.target_repository || 'bcgov/nr-fom' }}`, checked out at `./target` (optional `target_ref`; temporary PR path defaults to EY-era `70555fd87a88c4c1d2008b868d345d9eaa8c67f1`). Pre-collected evidence is in `./evidence/`
+Target: `${{ inputs.target_repository || 'bcgov/nr-fom' }}`, checked out at `./target` (current tip). Pre-collected evidence is in `./evidence/`
 (`dependabot.json`, `code-scanning.json`, `secret-scanning.json` (values REDACTED), `semgrep.json`, `gitleaks.json`,
 `osv-scanner.json`, `trivy.json`). Evidence files may be empty if a source was unavailable; note that in `coverage_gaps`.
 
@@ -90,18 +82,21 @@ TLS), INFRA (Dockerfiles, Helm/OpenShift manifests, GitHub Actions: pinning, per
 DATA (PII logging, error leakage), API (validation, rate limiting, mass assignment).
 
 ## Go/no-go seed (prototype vs bcgov/nr-fom)
-Confirm or refute with cite-or-ask — score gate requires both IDs accepted.
-These seed findings exist on the EY-era / pre-nr-fom#1223 commit `70555fd87a88c4c1d2008b868d345d9eaa8c67f1`
-(the temporary PR-path default). On tip they may already be fixed — cite-or-ask still applies; do not invent.
+Confirm or refute with cite-or-ask — score gate requires each ID either as an accepted open finding **or** as
+confirmed-fixed with a valid `file:line` cite under `./target` (put confirmed fixes in `fixed`, not only `coverage_gaps`).
+Do not invent; if you cannot cite, put doubts in `questions`.
 - **AUTH-001** — JWT algorithm confusion (e.g. `alg=none` / HS256 accepted where RS256 is expected) in token verification.
-  Start at `api/src/core/security/auth.service.ts`: look for `verify(...)` calls that omit an `algorithms:` pin.
+  Start at `api/src/core/security/auth.service.ts`: `verify(...)` without an `algorithms:` pin is the open finding;
+  a cite of `algorithms: ['RS256']` (or equivalent pin) on those `verify` calls is confirmed-fixed.
 - **CRYPTO-001** — `defaultkey` (or similarly guessable) encryption-key fallback for data at rest
-  (e.g. `api/src/app/modules/public-comment/public-comment.service.ts`).
-If confirmed, use those exact IDs with valid `file:line` evidence under `./target`. If not confirmable, put doubts in `questions` (do not invent).
+  (e.g. `api/src/app/modules/public-comment/public-comment.service.ts`). Absence of the fallback plus a hard fail when
+  the key env is unset is confirmed-fixed — cite the fail-closed lines.
+If confirmed open, use those exact IDs in `findings` with valid evidence. If confirmed fixed, use those exact IDs in `fixed`.
 
 ## Cite-or-ask rule
 Every finding MUST cite at least one `file:line` that exists in `./target` and contains the issue.
-If you suspect something but cannot cite it, put it in `questions`, not `findings`. No speculation.
+Every `fixed` entry MUST cite at least one `file:line` that exists in `./target` and shows the fix.
+If you suspect something but cannot cite it, put it in `questions`, not `findings` or `fixed`. No speculation.
 
 ## Output
 Write `reports/findings.json`:
@@ -114,10 +109,14 @@ Write `reports/findings.json`:
      "title": "...", "evidence": [{"file": "path/rel/to/target", "line": 42, "snippet": "..."}],
      "impact": "...", "recommendation": "...", "source": "agent|semgrep|codeql|dependabot|..."}
   ],
+  "fixed": [
+    {"id": "AUTH-001", "file": "api/src/core/security/auth.service.ts", "line": 160,
+     "snippet": "algorithms: ['RS256']", "note": "JWT verify pinned to RS256"}
+  ],
   "questions": [{"domain": "...", "question": "...", "why": "..."}],
   "coverage_gaps": ["..."]
 }
 ```
 IDs: `<DOMAIN>-NNN`, numbered per domain. Deduplicate scanner hits into single findings.
-Then write `reports/rapid-security-assessment.md`: executive summary, findings table sorted by severity, per-finding
-detail, questions, coverage gaps. Do not include any secret values.
+Then write `reports/rapid-security-assessment.md`: executive summary, findings table sorted by severity, confirmed-fixed
+table, questions, coverage gaps. Do not include any secret values.
