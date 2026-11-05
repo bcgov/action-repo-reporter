@@ -89,6 +89,8 @@ AUTH (authn/authz, JWT validation, algorithm pinning, session), CRYPTO (key mgmt
 INJ (SQL/command/template injection), SECRETS, DEPS (vulnerable deps, from evidence), CONFIG (CORS, headers, debug,
 TLS), INFRA (Dockerfiles, Helm/OpenShift manifests, GitHub Actions: pinning, permissions, pull_request_target),
 DATA (PII logging, error leakage), API (validation, rate limiting, mass assignment).
+STACK (folded from the former FDS audit: framework/runtime currency, CI/CD pipeline integrity, test & lint gates,
+config hygiene) — report only security-relevant, citable issues as findings; note non-security stack gaps in `coverage_gaps`.
 
 ## Go/no-go seed (ONLY when target is `bcgov/nr-fom`)
 For any other target, skip this section entirely: there are no seed IDs, do not create AUTH-001/CRYPTO-001 by
