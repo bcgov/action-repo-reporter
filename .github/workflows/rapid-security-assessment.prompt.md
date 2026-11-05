@@ -1,24 +1,24 @@
 ---
-# PROTOTYPE — dispatch-only (workflow_dispatch).
+# Reusable per-target assessment, called by rapid-security-reports.yml
+# (same pattern as fds-project-audit.prompt.md / generate-reports.yml).
 # Recompile with `gh aw compile` after edits.
 engine: copilot
 concurrency:
-  group: "rapid-security-${{ github.run_id }}"
-  job-discriminator: "${{ github.run_id }}"
+  group: "gh-aw-rapid-security-${{ github.run_id }}-${{ inputs.target_repository }}"
+  job-discriminator: "${{ github.run_id }}-${{ inputs.target_repository }}"
 on:
+  workflow_call:
+    inputs:
+      target_repository:
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       target_repository:
-        description: "Public repo to assess (EY rapid-assessment group)"
+        description: "Public repo to assess (owner/name)"
         required: true
         default: bcgov/nr-fom
-        type: choice
-        options:
-          - bcgov/nr-fom
-          - bcgov/nr-hydrometric-rating-curve
-          - bcgov/nr-results-exam
-          - bcgov/nr-seedtransfer-map
-          - bcgov/pubcode
+        type: string
 permissions:
   contents: read
   copilot-requests: write
@@ -65,7 +65,7 @@ post-steps:
     if: always()
     uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
     with:
-      name: rapid-security-assessment
+      name: ${{ needs.activation.outputs.artifact_prefix }}rapid-security
       path: |
         reports/*
         evidence/*.json
