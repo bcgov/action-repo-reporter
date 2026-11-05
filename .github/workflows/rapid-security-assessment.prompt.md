@@ -28,13 +28,19 @@ steps:
   - name: Install scanners (semgrep, gitleaks, osv-scanner, trivy)
     run: |
       set -euo pipefail
-      pipx install semgrep==1.95.0 || pip install --user semgrep==1.95.0
-      mkdir -p "$HOME/.local/bin"; cd "$(mktemp -d)"
-      curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar xz gitleaks
-      curl -fsSLo osv-scanner https://github.com/google/osv-scanner/releases/download/v1.9.1/osv-scanner_linux_amd64
-      curl -fsSL https://github.com/aquasecurity/trivy/releases/download/v0.57.1/trivy_0.57.1_Linux-64bit.tar.gz | tar xz trivy
-      chmod +x gitleaks osv-scanner trivy && mv gitleaks osv-scanner trivy "$HOME/.local/bin/"
+      # Pins verified 2026-11-05 (trivy v0.57.1 assets 404'd). Each binary
+      # download is non-fatal so one broken URL cannot abort the agent.
+      pipx install semgrep==1.95.0 || pip install --user semgrep==1.95.0 || true
+      mkdir -p "$HOME/.local/bin"
+      tmp="$(mktemp -d)"; cd "$tmp"
+      curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz         | tar xz gitleaks         && mv gitleaks "$HOME/.local/bin/"         || echo "::warning::gitleaks install failed — evidence step will skip it"
+      curl -fsSLo osv-scanner https://github.com/google/osv-scanner/releases/download/v1.9.1/osv-scanner_linux_amd64         && chmod +x osv-scanner && mv osv-scanner "$HOME/.local/bin/"         || echo "::warning::osv-scanner install failed — evidence step will skip it"
+      curl -fsSL https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz         | tar xz trivy         && mv trivy "$HOME/.local/bin/"         || echo "::warning::trivy install failed — evidence step will skip it"
       echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      command -v semgrep >/dev/null && semgrep --version || true
+      command -v gitleaks >/dev/null && gitleaks version || true
+      command -v osv-scanner >/dev/null && osv-scanner --version || true
+      command -v trivy >/dev/null && trivy --version || true
   - name: Collect security evidence (alerts via caller gh auth + local scanners)
     env:
       GH_TOKEN: ${{ github.token }}
