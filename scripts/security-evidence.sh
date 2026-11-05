@@ -67,7 +67,7 @@ fi
 rm -f "$OUT/secret-scanning-raw.json"; mv "$OUT/secret-scanning.json.tmp" "$OUT/secret-scanning.json"
 
 # Always leave a JSON file for each scanner so the agent can tell "missing" from "empty".
-ensure() { [ -f "$1" ] || echo "$2" > "$1"; }
+ensure() { [ -s "$1" ] || echo "$2" > "$1"; }
 
 run() {
   local name="$1"; shift

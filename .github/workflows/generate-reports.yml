@@ -119,6 +119,20 @@ jobs:
           path: artifacts
           merge-multiple: false
 
+      # Keep unmerged reports from the shared PR branch so a filtered `repos=`
+      # run does not wipe sibling targets still awaiting merge on that branch.
+      - name: Preserve pending reports from open PR branch
+        run: |
+          set -euo pipefail
+          git fetch origin chore/rapid-security-reports:refs/remotes/origin/chore/rapid-security-reports 2>/dev/null || true
+          if git rev-parse --verify refs/remotes/origin/chore/rapid-security-reports >/dev/null 2>&1; then
+            git checkout origin/chore/rapid-security-reports -- reports/rapid-security/ 2>/dev/null \
+              && echo "Restored pending reports/rapid-security/ from chore/rapid-security-reports" \
+              || echo "No reports/rapid-security/ on pending branch (ok)"
+          else
+            echo "No pending chore/rapid-security-reports branch (ok)"
+          fi
+
       - name: Organize Reports
         id: organize
         run: |
@@ -127,6 +141,7 @@ jobs:
           find artifacts -type f 2>/dev/null | sort || true
           organized=0
           # Each artifact holds one target's reports/; key by findings.json repository.
+          # Require all three publish files nonempty before counting the set.
           while IFS= read -r -d '' f; do
             dir="$(dirname "$f")"
             repo="$(jq -r '.repository // empty' "$f")"
@@ -134,18 +149,22 @@ jobs:
             if [ -z "$name" ] || ! printf '%s' "$name" | grep -Eq '^[A-Za-z0-9._-]+$'; then
               echo "::warning::skipping $f (bad repository field)"; continue
             fi
-            out="reports/rapid-security/$name"
-            mkdir -p "$out"
-            copied=0
+            missing=0
             for g in findings.json score.json rapid-security-assessment.md; do
-              if [ -f "$dir/$g" ]; then
-                cp -vf "$dir/$g" "$out/$g"
-                copied=1
+              if [ ! -s "$dir/$g" ]; then
+                echo "::warning::skipping $repo — missing or empty $g"
+                missing=1
               fi
             done
-            if [ "$copied" -eq 1 ]; then
-              organized=$((organized + 1))
+            if [ "$missing" -ne 0 ]; then
+              continue
             fi
+            out="reports/rapid-security/$name"
+            mkdir -p "$out"
+            for g in findings.json score.json rapid-security-assessment.md; do
+              cp -vf "$dir/$g" "$out/$g"
+            done
+            organized=$((organized + 1))
           done < <(find artifacts -type f -path "*/reports/findings.json" -print0 2>/dev/null || true)
 
           echo "organized=$organized" >> "$GITHUB_OUTPUT"
