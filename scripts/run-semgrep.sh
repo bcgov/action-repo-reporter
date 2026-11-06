@@ -9,7 +9,7 @@ if ! command -v semgrep >/dev/null 2>&1; then
   echo "::error::Semgrep runtime unavailable: semgrep is not installed/on PATH" >&2
   exit 1
 fi
-if semgrep scan --config "$config" --metrics off --json -o "$out/semgrep.json.tmp" "$target" \
+if semgrep scan --config "$config" --metrics off --jobs 2 --json -o "$out/semgrep.json.tmp" "$target" \
     2> >(tee "$out/semgrep.err" >&2); then
   :
 else

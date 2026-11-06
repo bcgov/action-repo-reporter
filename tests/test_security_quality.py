@@ -182,5 +182,35 @@ class SemgrepTests(unittest.TestCase):
         self.assertIn("Semgrep runtime unavailable", result.stderr)
 
 
+class PipelineFailureTests(unittest.TestCase):
+    def test_failed_assessment_cannot_publish_diagnostic_artifacts(self):
+        workflow = (ROOT / ".github/workflows/generate-reports.yml").read_text()
+        organize = workflow.split("      - name: Organize Reports\n", 1)[1]
+        shell = organize.split("        run: |\n", 1)[1].split("      - name:", 1)[0]
+        shell = "\n".join(line[10:] for line in shell.splitlines())
+        with tempfile.TemporaryDirectory() as tmp:
+            for state in ("failure", "cancelled", "skipped"):
+                with self.subTest(state=state):
+                    result = subprocess.run(["bash", "-c", shell], cwd=tmp,
+                                            env=dict(os.environ, ASSESS_RESULT=state), text=True, capture_output=True)
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertIn("refusing to publish", result.stdout)
+                    self.assertFalse((pathlib.Path(tmp) / "reports").exists())
+
+    def test_installer_names_failed_command_and_runtime_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            python = root / "python3.12"
+            python.write_text("#!/bin/sh\necho 'venv creation failed: ensurepip unavailable' >&2\nexit 7\n")
+            python.chmod(0o755)
+            result = subprocess.run(["bash", str(ROOT / "scripts/install-semgrep.sh")],
+                                    env=dict(os.environ, PATH=tmp + ":/usr/bin:/bin", RUNNER_TEMP=tmp,
+                                             GITHUB_PATH=str(root / "path")), text=True, capture_output=True)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("Semgrep install/runtime preflight failed", result.stderr)
+            self.assertIn("ensurepip unavailable", result.stderr)
+            self.assertIn("python3.12 -m venv", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

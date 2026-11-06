@@ -5,6 +5,7 @@ trap 'echo "::error::Semgrep install/runtime preflight failed (exit $?) at: $BAS
 venv="${RUNNER_TEMP:?RUNNER_TEMP is required}/rsa-semgrep"
 python3.12 -m venv "$venv"
 "$venv/bin/python" -m pip install --disable-pip-version-check semgrep==1.95.0
+export PATH="$venv/bin:$PATH"
 "$venv/bin/semgrep" --version
 # Prepend the isolated interpreter's scripts for subsequent Actions steps.
 echo "$venv/bin" >> "${GITHUB_PATH:?GITHUB_PATH is required}"

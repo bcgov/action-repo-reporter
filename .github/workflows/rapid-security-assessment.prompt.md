@@ -27,10 +27,14 @@ network:
     - "*.semgrep.dev"
     - "*.semgrep.com"
 steps:
+  - name: Setup assessment Python
+    uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+    with:
+      python-version: '3.12'
   - name: Install scanners (semgrep, gitleaks, osv-scanner, trivy)
     run: |
       set -euo pipefail
-      # gh-aw already sets up Python 3.12. pipx ignores that interpreter by default.
+      # Pin the scanner interpreter explicitly; pipx ignores setup-python by default.
       export PATH="$HOME/.local/bin:$PATH"
       mkdir -p "$HOME/.local/bin"
       echo "$HOME/.local/bin" >> "$GITHUB_PATH"
