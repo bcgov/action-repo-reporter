@@ -4,10 +4,9 @@ name: Multi-Repo Rapid Security Assessments
 # optional repos filter), calls the reusable gh-aw rapid-security assessment
 # once per target, then commit-reports collects artifacts into
 # reports/rapid-security/<repo>/ and opens/updates one reports PR.
-# Former FDS Full-Stack Project Audit (fds-project-audit.prompt) is removed;
-# stack checks live in the rapid-security prompt.
+# Former FDS Full-Stack Project Audit is removed; stack checks live in the scripted assessor.
 #
-# User-facing entrypoint: this workflow only. The prompt is workflow_call-only.
+# User-facing entrypoint: this workflow only. The assessor is workflow_call-only.
 # workflow_call exists so PR CI can dry-run it (dry_run skips publishing);
 # dry_run is deliberately absent from the dispatch form.
 on:
@@ -41,7 +40,6 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  copilot-requests: write
 
 jobs:
   select-targets:
@@ -103,9 +101,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-      issues: write
-      copilot-requests: write
-    uses: ./.github/workflows/rapid-security-assessment.prompt.lock.yml
+    uses: ./.github/workflows/rapid-security-assessment.yml
     with:
       target_repository: ${{ matrix.target_repository }}
     secrets: inherit
@@ -184,6 +180,9 @@ jobs:
             for g in findings.json score.json rapid-security-assessment.md; do
               cp -vf "$dir/$g" "$out/$g"
             done
+            if [ -s "$dir/cover-letter.md" ]; then
+              cp -vf "$dir/cover-letter.md" "$out/cover-letter.md"
+            fi
             organized=$((organized + 1))
           done < <(find artifacts -type f -path "*/reports/findings.json" -print0 2>/dev/null || true)
 

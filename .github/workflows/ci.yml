@@ -20,36 +20,28 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
-        with:
-          node-version: '20'
-
-      - name: Install GitHub Agentic Workflows CLI
-        run: gh extension install github/gh-aw --pin v0.89.21
-
-      - name: Validate Prompt Frontmatter and Expressions
+      - name: Require scripted assessor workflow
         run: |
           set -euo pipefail
-          # Validate that workflows compile without writing lock files
-          gh aw validate .github/workflows
+          test -f .github/workflows/rapid-security-assessment.yml
+          test -f .github/workflows/generate-reports.yml
+          test -f scripts/compile-findings.py
+          test -f scripts/render-report.py
+          test -f scripts/write-digest.py
+          # Prompt/lock must not remain as the findings author.
+          if [ -f .github/workflows/rapid-security-assessment.prompt.md ] || [ -f .github/workflows/rapid-security-assessment.prompt.lock.yml ]; then
+            echo "::error::gh-aw prompt/lock still present; scripted assessor replaces Copilot authorship"
+            exit 1
+          fi
+          # Basic workflow_call-only check on the assessor
+          if grep -q 'workflow_dispatch' .github/workflows/rapid-security-assessment.yml; then
+            echo "::error::rapid-security-assessment.yml must stay workflow_call-only"
+            exit 1
+          fi
+          grep -q 'compile-findings.py' .github/workflows/rapid-security-assessment.yml
+          grep -q 'render-report.py' .github/workflows/rapid-security-assessment.yml
+          echo "Scripted assessor workflow present and call-only"
 
-      - name: Compile rapid-security workflow
-        run: gh aw compile rapid-security-assessment.prompt --approve
-
-      # Keep compiler output available when the drift check fails, for reproducible updates.
-      - name: Upload compiled rapid-security workflow
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: compiled-rapid-security-workflow
-          path: |
-            .github/workflows/rapid-security-assessment.prompt.lock.yml
-            .github/aw/actions-lock.json
-          include-hidden-files: true
-          if-no-files-found: error
-
-      - name: Require prompt and lockfile in sync
-        run: git diff --exit-code -- .github/workflows/rapid-security-assessment.prompt.lock.yml .github/aw/actions-lock.json
 
   security-quality:
     name: Security quality regression tests
@@ -106,7 +98,7 @@ jobs:
           set -euo pipefail
           changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
           echo "$changed"
-          if echo "$changed" | grep -Eq '^(scripts/|tests/|\.github/aw/|\.github/workflows/(ci|generate-reports)\.yml$|\.github/workflows/rapid-security-assessment\.prompt\.(md|lock\.yml)$)'; then
+          if echo "$changed" | grep -Eq '^(scripts/|tests/|\.github/workflows/(ci|generate-reports|rapid-security-assessment)\.yml$)'; then
             echo "report=true" >> "$GITHUB_OUTPUT"
           else
             echo "report=false" >> "$GITHUB_OUTPUT"
@@ -116,7 +108,7 @@ jobs:
   dry-run-reports:
     name: Dry-run reports (nr-fom)
     needs: changes
-    # Forks and Dependabot get no secrets or Copilot access, so they skip it.
+    # Forks and Dependabot get no secrets inherit, so they skip the live dry-run.
     if: >-
       needs.changes.outputs.report == 'true'
       && github.event.pull_request.head.repo.full_name == github.repository
@@ -127,7 +119,6 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
-      copilot-requests: write
     uses: ./.github/workflows/generate-reports.yml
     with:
       repos: nr-fom

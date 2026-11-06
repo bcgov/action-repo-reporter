@@ -20,9 +20,14 @@ def render(data):
     text = "# Assessment\n\n## Scope\n| Domain | Status | Findings |\n|---|---|---|\n"
     for c in data["chapters"]:
         text += f"| {c['id']} | {c['status']} | {len(c['finding_ids'])} |\n"
+    findings = {f.get("id"): f for f in data.get("findings") or [] if isinstance(f, dict)}
     for c in data["chapters"]:
         text += f"\n## {c['id']}\nStatus: {c['status']}\n{c['note']}\n"
-        text += " ".join(c["finding_ids"]) + "\n"
+        # Substance beyond note+IDs so the raised chapter gate can pass in unit tests.
+        text += "Tooling detail: scripted chapter body includes impact context for citations.\n"
+        for fid in c["finding_ids"]:
+            f = findings.get(fid) or {}
+            text += f"{fid} {f.get('title','')} impact:{f.get('impact','n/a')}\n"
         for e in c["evidence"]:
             if isinstance(e, dict):
                 text += f"{e.get('file')}:{e.get('line')}\n"
@@ -58,7 +63,10 @@ class ChapterGateTests(unittest.TestCase):
             with self.subTest(fixed=fixed):
                 self.data["findings"] = []
                 self.data["fixed"] = []
-                entry = {"id": "AUTH-001", "evidence": [{"file": "auth.ts", "line": 1}]}
+                entry = {"id": "AUTH-001", "evidence": [{"file": "auth.ts", "line": 1}],
+                         "impact": "Algorithm confusion can forge tokens.",
+                         "recommendation": "Pin algorithms on verify calls.",
+                         "title": "JWT alg pin"}
                 if not fixed:
                     entry["severity"] = "High"
                 self.data["fixed" if fixed else "findings"] = [entry]
@@ -236,6 +244,116 @@ class PipelineFailureTests(unittest.TestCase):
             self.assertIn("Semgrep install/runtime preflight failed", result.stderr)
             self.assertIn("ensurepip unavailable", result.stderr)
             self.assertIn("python3.14 -m venv", result.stderr)
+
+
+
+class RaisedBarTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = pathlib.Path(self.tmp.name)
+        (self.root / "auth.ts").write_text("verify(token, {algorithms: ['RS256']});\n")
+        self.evidence = self.root / "evidence"
+        self.evidence.mkdir()
+        self.data = {"findings": [], "fixed": [], "chapters": [
+            {"id": name, "status": "not_assessed",
+             "note": "Cross repository alert access denied with HTTP 403 for this source.",
+             "finding_ids": [], "evidence": []} for name in gate.CHAPTERS]}
+
+    def test_finding_requires_impact_and_recommendation(self):
+        self.data["findings"] = [{
+            "id": "INJ-001", "severity": "Low",
+            "evidence": [{"file": "auth.ts", "line": 1}],
+            "title": "x",
+        }]
+        self.data["chapters"][5].update(
+            status="analyzed",
+            note="Semgrep 1.0 ran with 1 result(s) and promoted an injection finding.",
+            finding_ids=["INJ-001"],
+        )
+        errors = gate.validate(self.data, render(self.data), self.root, self.evidence)
+        self.assertTrue(any("impact" in e for e in errors))
+        self.data["findings"][0]["impact"] = "User input reaches a dangerous sink."
+        self.data["findings"][0]["recommendation"] = "Validate and encode output."
+        # still needs markdown substance; render helper supplies it
+        # also need semgrep evidence if we mark injection analyzed with scanner rule —
+        # injection is a scanner chapter; without evidence file, skip-check does not fire.
+        errors = gate.validate(self.data, render(self.data), self.root, self.evidence)
+        self.assertEqual([], errors, errors)
+
+    def test_scanner_chapter_cannot_skip_when_evidence_exists(self):
+        (self.evidence / "semgrep.json").write_text(json.dumps({
+            "results": [], "paths": {"scanned": ["auth.ts"]}, "version": "1.0"
+        }))
+        # code-scanning left not_assessed despite usable semgrep evidence
+        errors = gate.validate(self.data, render(self.data), self.root, self.evidence)
+        self.assertTrue(any("code-scanning" in e and "not_assessed" in e for e in errors), errors)
+
+    def test_note_plus_ids_only_rejected(self):
+        self.data["findings"] = [{
+            "id": "INJ-001", "severity": "Low", "title": "eval",
+            "impact": "User input reaches eval.",
+            "recommendation": "Remove eval of untrusted input.",
+            "evidence": [{"file": "auth.ts", "line": 1}],
+        }]
+        self.data["chapters"][5].update(
+            status="analyzed",
+            note="Semgrep 1.0 ran with 1 result(s) on the injection ruleset today.",
+            finding_ids=["INJ-001"], evidence=[],
+        )
+        # Hand-build a #95-shaped shallow markdown section for injection only
+        md = render(self.data)
+        # Replace injection section with note+ids only
+        shallow = []
+        for line in md.splitlines():
+            shallow.append(line)
+        md2 = md
+        import re as _re
+        md2 = _re.sub(
+            r"## injection\nStatus: analyzed\n.*?(?=\n## |\Z)",
+            "## injection\nStatus: analyzed\nSemgrep 1.0 ran with 1 result(s) on the injection ruleset today.\n- INJ-001\n\n",
+            md2,
+            count=1,
+            flags=_re.S,
+        )
+        errors = gate.validate(self.data, md2, self.root, self.evidence)
+        self.assertTrue(any("only a note plus IDs" in e for e in errors), errors)
+
+
+class DigestTests(unittest.TestCase):
+    def test_digest_cite_check_drops_unknown_finding(self):
+        spec = importlib.util.spec_from_file_location("digest", ROOT / "scripts/write-digest.py")
+        dig = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(dig)
+        data = {
+            "repository": "bcgov/nr-fom",
+            "findings": [{"id": "DEPS-001", "severity": "High", "title": "x",
+                          "impact": "GHSA-aaaa-bbbb-cccc in pkg", "recommendation": "upgrade"}],
+            "fixed": [],
+            "chapters": [{"id": c, "status": "analyzed"} for c in gate.CHAPTERS],
+            "coverage_gaps": [],
+        }
+        fids, ch, adv = dig.allowed_refs(data)
+        bad = "See FIND-999 and CVE-2099-0001 in architecture."
+        errs = dig.cite_check(bad, fids, ch, adv)
+        self.assertTrue(errs)
+
+    def test_deterministic_digest_passes_cite_check(self):
+        spec = importlib.util.spec_from_file_location("digest", ROOT / "scripts/write-digest.py")
+        dig = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(dig)
+        data = {
+            "repository": "bcgov/nr-fom",
+            "findings": [{"id": "DEPS-001", "severity": "High", "title": "joi advisory",
+                          "impact": "DoS", "recommendation": "upgrade"}],
+            "fixed": [{"id": "AUTH-001"}],
+            "chapters": [{"id": c, "status": "analyzed"} for c in gate.CHAPTERS],
+            "coverage_gaps": ["GitHub's own alert list was not read (code-scanning: HTTP 403 or unavailable)."],
+        }
+        text = dig.deterministic_digest(data, "reports/rapid-security/nr-fom/rapid-security-assessment.md")
+        fids, ch, adv = dig.allowed_refs(data)
+        self.assertEqual([], dig.cite_check(text, fids, ch, adv), text)
+
 
 
 if __name__ == "__main__":

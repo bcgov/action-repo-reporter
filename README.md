@@ -1,12 +1,13 @@
 # Multi-Repo Rapid Security Assessments (action-repo-reporter)
 
 Central dashboard for automated **rapid security assessments** across Forest Digital
-Services (FDS) public repositories, using [GitHub Agentic Workflows (gh-aw)](https://github.com/github/gh-aw).
+Services (FDS) public repositories.
 
 The monthly (or dispatch) pipeline clones each target, runs deterministic scanners
-and GitHub security-alert collection, then has an agent interpret the evidence into
-structured findings plus a Markdown report. Reports land in this repo under
-`reports/rapid-security/<repo>/` via a single pull request.
+and GitHub security-alert collection, then **scripts** compile `findings.json` and
+render the Markdown report (`scripts/compile-findings.py`, `scripts/render-report.py`).
+An optional cover-letter digest may be added afterward; it cannot invent findings.
+Reports land in this repo under `reports/rapid-security/<repo>/` via a single pull request.
 
 ## What you get and where
 
@@ -25,9 +26,9 @@ necessarily that the worst item is Critical — always read the findings table.
 | Source | Empty `[]` / `{}` usually means |
 |---|---|
 | Dependabot / code-scanning / secret-scanning | No open alerts **or** the workflow token cannot read cross-repo alerts. Cross-repo reads need repo secret `SECURITY_ALERTS_TOKEN` with `security-events: read` on each target. Without it, the default `GITHUB_TOKEN` only sees alerts for *this* repo. |
-| Semgrep | Install/network failure (see workflow log / `evidence/NOTES.txt`) or a clean scan written as `{}`. |
+| Semgrep | Install/network failure (see workflow log / `evidence/NOTES.txt`). Usable clean scans have `results: []` and nonempty `paths.scanned`. |
 | Gitleaks | No secrets found (`[]`) or tool missing. |
-| Trivy / OSV | Tool missing, or a large JSON the agent must triage (not leave as a coverage gap). |
+| Trivy / OSV | Tool missing, or a large JSON the compile script triages into dependency findings. |
 
 Publish path: `generate-reports.yml` → download `*rapid-security` artifacts →
 organize into `reports/rapid-security/<repo>/` →
@@ -47,8 +48,9 @@ A run that only writes files on the runner (or calls `noop` without that PR) is 
     `bcgov/nr-fom`, `bcgov/nr-hydrometric-rating-curve`, `bcgov/nr-results-exam`,
     `bcgov/nr-seedtransfer-map`, `bcgov/pubcode`.
 
-The reusable prompt (`.github/workflows/rapid-security-assessment.prompt.md`) is
-`workflow_call` only — do not dispatch it directly.
+The reusable assessor (`.github/workflows/rapid-security-assessment.yml`) is
+`workflow_call` only — do not dispatch it directly. Findings JSON and chapter
+markdown are authored by scripts, not Copilot.
 
 ## Active rapid-security reports
 
@@ -84,3 +86,15 @@ gh aw compile rapid-security-assessment.prompt
 ```
 
 CI validates frontmatter with `gh aw validate`.
+
+## Honest bar
+
+This pipeline produces consistent, citable findings with per-finding impact and
+recommendation, chapter write-ups even when a scan is clean, and honest coverage
+gaps (including when GitHub's own alert list was not read). It does **not** write a
+long EY consulting narrative, is **not** a full route-guard RBAC audit, and does
+**not** claim GitHub alert lists were read until issue #96. Green CI / schema pass
+is not EY quality.
+
+Until #96, GitHub-alert chapters report the public scans already run:
+code-scanning → Semgrep; secret-scanning → gitleaks; Dependabot → osv-scanner + Trivy.
