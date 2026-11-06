@@ -1,42 +1,89 @@
-# Multi-Repo Code Quality Audits (action-repo-reporter)
+# Multi-Repo Rapid Security Assessments (action-repo-reporter)
 
-This repository serves as a centralized, automated dashboard for code quality audits across our public repositories, using [GitHub Agentic Workflows (gh-aw)](https://github.com/github/gh-aw).
+Central dashboard for automated **rapid security assessments** across Forest Digital
+Services (FDS) public repositories, using [GitHub Agentic Workflows (gh-aw)](https://github.com/github/gh-aw).
 
-It runs a parallelized GitHub Actions workflow to audit repositories against the **Forest Digital Services (FDS) Stack Standard** (backend rules, React strict-mode frontend structures, and CI/CD security parameters).
+The monthly (or dispatch) pipeline clones each target, runs deterministic scanners
+and GitHub security-alert collection, then has an agent interpret the evidence into
+structured findings plus a Markdown report. Reports land in this repo under
+`reports/rapid-security/<repo>/` via a single pull request.
 
-## Active Reports
+Legacy FDS code-quality reports under `reports/*-code-quality-assessment.md` are
+kept for history; new runs use the rapid-security path.
 
-Browse the generated assessment reports directly in this repository:
-*   📊 **actions:** [actions-code-quality-assessment.md](reports/actions-code-quality-assessment.md) (source: `bcgov/actions`)
-*   📊 **pubcode:** [pubcode-code-quality-assessment.md](reports/pubcode-code-quality-assessment.md) (source: `bcgov/pubcode`)
-*   📊 **quickstart-openshift:** [quickstart-openshift-code-quality-assessment.md](reports/quickstart-openshift-code-quality-assessment.md) (source: `bcgov/quickstart-openshift`)
+## What you get and where
 
-*Note: Reports are updated automatically every Monday morning at 8:00 AM UTC via GitHub Actions.*
+| Output | Path |
+|---|---|
+| Findings (JSON) | `reports/rapid-security/<repo>/findings.json` |
+| EY-style score | `reports/rapid-security/<repo>/score.json` (`min(100, 10C+5H+2M+1L)`) |
+| Human report | `reports/rapid-security/<repo>/rapid-security-assessment.md` |
 
----
+**How to read severity:** Critical / High / Medium / Low. The score is a weighted
+count capped at 100 (same formula EY used). A high score means many findings, not
+necessarily that the worst item is Critical — always read the findings table.
 
-## Technical Architecture
+**Why scanners sometimes look empty**
 
-The reporting engine uses a **Checkout-and-Audit** pipeline running in parallel using a GitHub Actions Matrix:
+| Source | Empty `[]` / `{}` usually means |
+|---|---|
+| Dependabot / code-scanning / secret-scanning | No open alerts **or** the workflow token cannot read cross-repo alerts. Cross-repo reads need repo secret `SECURITY_ALERTS_TOKEN` with `security-events: read` on each target. Without it, the default `GITHUB_TOKEN` only sees alerts for *this* repo. |
+| Semgrep | Install/network failure (see workflow log / `evidence/NOTES.txt`) or a clean scan written as `{}`. |
+| Gitleaks | No secrets found (`[]`) or tool missing. |
+| Trivy / OSV | Tool missing, or a large JSON the agent must triage (not leave as a coverage gap). |
 
-1.  **Orchestrator:** The [generate-reports.yml](.github/workflows/generate-reports.yml) workflow runs at 8:00 AM UTC every Monday or when manually triggered.
-2.  **Target Checkout:** For each target repository in the matrix, the runner clones the code into a subfolder (`./target_repo`).
-3.  **Audit Execution:** The `gh-aw` agent executes the custom [fds-project-audit.prompt.md](.github/workflows/fds-project-audit.prompt.md) prompt, using local file read tools to check files inside `./target_repo`.
-4.  **Save:** The resulting assessment markdown report is moved to the `reports/` folder and pushed back to this dashboard branch.
+Publish path: `generate-reports.yml` → download `*rapid-security` artifacts →
+organize into `reports/rapid-security/<repo>/` →
+`peter-evans/create-pull-request` on branch `chore/rapid-security-reports`.
+A run that only writes files on the runner (or calls `noop` without that PR) is a
+**failure** — artifacts alone are not a publish.
 
----
+## How to run
 
-## How to Add New Repositories
+**User-facing entrypoint:** Actions → **Multi-Repo Rapid Security Assessments**
+(`generate-reports.yml`).
 
-To expand the scope of audits to cover additional repositories:
-1.  Open [.github/workflows/generate-reports.yml](.github/workflows/generate-reports.yml).
-2.  Append the target repository name to the `matrix.target_repository` list:
-    ```yaml
-    matrix:
-      target_repository:
-        - "bcgov/quickstart-openshift"
-        - "bcgov/pubcode"
-        - "bcgov/actions"
-        - "org/your-new-repository" # Add your new repository here
-    ```
-3.  Commit and push the changes.
+- **Schedule:** 1st of each month 14:00 UTC — all five targets.
+- **workflow_dispatch:** same full set by default.
+  - Optional input `repos`: comma-separated `owner/name` or bare names
+    (e.g. `nr-fom,pubcode` or `bcgov/nr-fom`). Empty = all five:
+    `bcgov/nr-fom`, `bcgov/nr-hydrometric-rating-curve`, `bcgov/nr-results-exam`,
+    `bcgov/nr-seedtransfer-map`, `bcgov/pubcode`.
+
+The reusable prompt (`.github/workflows/rapid-security-assessment.prompt.md`) is
+`workflow_call` only — do not dispatch it directly.
+
+## Active rapid-security reports
+
+After the first successful publish PR merges, browse:
+
+* `reports/rapid-security/nr-fom/`
+* `reports/rapid-security/nr-hydrometric-rating-curve/`
+* `reports/rapid-security/nr-results-exam/`
+* `reports/rapid-security/nr-seedtransfer-map/`
+* `reports/rapid-security/pubcode/`
+
+## Technical architecture
+
+1. **Orchestrator:** [generate-reports.yml](.github/workflows/generate-reports.yml)
+   selects targets, fans out, then `commit-reports` publishes one PR.
+2. **Per target:** [rapid-security-assessment.prompt.md](.github/workflows/rapid-security-assessment.prompt.md)
+   installs scanners, runs [scripts/security-evidence.sh](scripts/security-evidence.sh),
+   agent writes `reports/findings.json` + `reports/rapid-security-assessment.md`,
+   [scripts/score.py](scripts/score.py) validates cites and scores.
+3. **Secrets:** optional `SECURITY_ALERTS_TOKEN` for cross-repo alert APIs.
+
+## How to add repositories
+
+1. Add the `owner/name` slug to the `ALL` array in
+   [generate-reports.yml](.github/workflows/generate-reports.yml) (`select-targets` job).
+2. Ensure `SECURITY_ALERTS_TOKEN` (if used) can read security alerts on that repo.
+3. Commit and merge. Next schedule/dispatch includes it when `repos` is empty.
+
+## Recompile after prompt edits
+
+```bash
+gh aw compile rapid-security-assessment.prompt
+```
+
+CI validates frontmatter with `gh aw validate`.
