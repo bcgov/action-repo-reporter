@@ -392,10 +392,52 @@ class CompileTests(unittest.TestCase):
                      "database_specific": {"severity": "HIGH"}}]}]}]}))
             (ev / "trivy.json").write_text(json.dumps({"Trivy": {"Version": "0.76.1"}, "Results": [
                 {"Target": "package-lock.json", "Vulnerabilities": [
-                    {"VulnerabilityID": "CVE-2026-118772", "PkgName": "joi", "Severity": "HIGH"}]}]}))
+                    {"VulnerabilityID": "CVE-2026-118772", "PkgName": "joi", "InstalledVersion": "18.3.0", "Severity": "HIGH"}]}]}))
             c = mod.Compiler("bcgov/x", root, ev)
             c.ingest_osv(); c.ingest_trivy()
             self.assertEqual(1, len(c.findings))
+
+
+class ReviewRegressionTests(unittest.TestCase):
+    def load(self):
+        spec = importlib.util.spec_from_file_location("compile_findings2", ROOT / "scripts/compile-findings.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_absolute_path_inside_root_becomes_relative(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp); (root / "api").mkdir(); (root / "api/package-lock.json").write_text("{}\n")
+            self.assertEqual("api/package-lock.json", mod.rel_path(str(root / "api/package-lock.json"), root))
+            self.assertIsNone(mod.rel_path("/etc/passwd", root))
+
+    def test_symlink_escape_not_read(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp); (root / "leak").symlink_to("/etc/hostname")
+            self.assertIsNone(mod.cite(root, "leak", 1))
+
+    def test_auth_fixed_only_when_every_verify_pinned(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "t"; d = root / "api/src/core/security"; d.mkdir(parents=True)
+            (d / "auth.service.ts").write_text("verify(a, k, {\n  algorithms: ['RS256'],\n});\nverify(b, k);\n")
+            ev = pathlib.Path(tmp) / "e"; ev.mkdir()
+            c = mod.Compiler("bcgov/nr-fom", root, ev); c.seed_auth_crypto()
+            self.assertEqual([], c.fixed)
+            self.assertEqual(["AUTH-001"], [f["id"] for f in c.findings])
+            self.assertEqual(4, c.findings[0]["evidence"][0]["line"])
+
+    def test_gitleaks_empty_with_failure_note_is_not_clean(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "t"; root.mkdir()
+            ev = pathlib.Path(tmp) / "e"; ev.mkdir()
+            (ev / "gitleaks.json").write_text("[]")
+            (ev / "NOTES.txt").write_text("WARN: gitleaks not installed\n")
+            c = mod.Compiler("bcgov/x", root, ev); c.ingest_gitleaks()
+            self.assertFalse(c.tool_meta["gitleaks"]["ok"])
 
 if __name__ == "__main__":
     unittest.main()

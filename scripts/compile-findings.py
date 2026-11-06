@@ -119,10 +119,37 @@ def owasp_for_cwes(cwes: list[int]) -> list[str]:
     return cats
 
 
+def inside(root: pathlib.Path, rel: str) -> pathlib.Path | None:
+    """Resolved file under root (symlinks followed and contained), else None."""
+    try:
+        base = root.resolve(strict=True)
+        target = (root / rel).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    if target == base or base not in target.parents or not target.is_file():
+        return None
+    return target
+
+
+def safe_text(root: pathlib.Path, rel: str) -> str | None:
+    target = inside(root, rel)
+    if target is None:
+        return None
+    try:
+        return target.read_text(errors="replace")
+    except OSError:
+        return None
+
+
 def rel_path(path: str, root: pathlib.Path) -> str | None:
     if not path:
         return None
     p = path.replace("\\", "/")
+    if pathlib.PurePath(p).is_absolute():
+        try:
+            p = str(pathlib.Path(p).resolve().relative_to(root.resolve()))
+        except (OSError, ValueError):
+            return None
     for prefix in ("target/", "./target/", "/target/"):
         if p.startswith(prefix):
             p = p[len(prefix):]
@@ -130,36 +157,30 @@ def rel_path(path: str, root: pathlib.Path) -> str | None:
         p = p[2:]
     if pathlib.PurePath(p).is_absolute() or ".." in pathlib.PurePath(p).parts:
         return None
-    if (root / p).is_file():
+    if inside(root, p):
         return p
     parts = pathlib.PurePath(p).parts
-    if len(parts) > 1:
-        alt = root.joinpath(*parts[1:])
-        if alt.is_file():
-            return str(pathlib.PurePath(*parts[1:]))
+    if len(parts) > 1 and inside(root, str(pathlib.PurePath(*parts[1:]))):
+        return str(pathlib.PurePath(*parts[1:]))
     return None
 
 
 def snippet_at(root: pathlib.Path, rel: str, line: int, fallback: str = "") -> str:
-    try:
-        lines = (root / rel).read_text(errors="replace").splitlines()
+    text = safe_text(root, rel)
+    if text is not None:
+        lines = text.splitlines()
         if 1 <= line <= len(lines):
             return lines[line - 1].strip()[:200]
-    except OSError:
-        pass
     return (fallback or "")[:200]
 
 
 def cite(root: pathlib.Path, rel: str, line: int, snippet: str = "") -> dict | None:
     if not rel or not isinstance(line, int) or line < 1:
         return None
-    if not (root / rel).is_file():
+    text = safe_text(root, rel)
+    if text is None:
         return None
-    try:
-        n = sum(1 for _ in (root / rel).open(errors="ignore"))
-    except OSError:
-        return None
-    if line > n:
+    if line > len(text.splitlines()):
         return None
     return {"file": rel, "line": line, "snippet": snippet_at(root, rel, line, snippet)}
 
@@ -186,7 +207,8 @@ class Compiler:
     def _commit(self) -> str:
         try:
             return subprocess.check_output(
-                ["git", "-C", str(self.root), "rev-parse", "HEAD"], text=True
+                ["git", "-C", str(self.root), "rev-parse", "HEAD"], text=True,
+                stderr=subprocess.DEVNULL,
             ).strip() or "unknown"
         except (OSError, subprocess.CalledProcessError):
             return "unknown"
@@ -254,7 +276,7 @@ class Compiler:
         if not lock or not pkg:
             return 1
         try:
-            lines = (self.root / lock).read_text(errors="replace").splitlines()
+            lines = (safe_text(self.root, lock) or "").splitlines()
         except OSError:
             return 1
         patterns = [
@@ -304,6 +326,9 @@ class Compiler:
             message = str(extra.get("message") or meta.get("message") or check_id)
             severity = normalize_severity(extra.get("severity") or meta.get("impact"))
             domain = self._semgrep_domain(check_id, meta, path)
+            if domain in ("secrets", "cryptography") or re.search(
+                    r"secret|password|passwd|credential|token|api.?key|private.?key|hardcoded", check_id, re.I):
+                ev["snippet"] = "[redacted: possible credential]"
             impact = message.split("\n")[0][:240]
             if cwes:
                 impact += " CWE: " + ", ".join(f"CWE-{c}" for c in cwes[:5])
@@ -363,6 +388,9 @@ class Compiler:
             return
         if not isinstance(data, list):
             self._mark_source("gitleaks", False, detail="gitleaks.json is not a list")
+            return
+        if not data and fail:
+            self._mark_source("gitleaks", False, detail=fail)
             return
         self._mark_source("gitleaks", True, version="gitleaks", count=len(data),
                           detail="clean scan" if not data else f"{len(data)} leak(s)")
@@ -435,11 +463,11 @@ class Compiler:
                 evidence=[ev], impact=impact,
                 recommendation=f"Upgrade {name} from {version} to a patched release per {vid}.",
                 source="osv-scanner", cwes=cwes or [1104],
-                dedupe_key=f"osv|{name}|{vid}",
+                dedupe_key=f"dep|{lock}|{name}|{version}|{vid}",
             )
             # Record aliases (e.g. CVE ids) so Trivy does not re-add the same advisory.
             for alias in aliases:
-                self._dedupe.add(f"osv|{name}|{alias}")
+                self._dedupe.add(f"dep|{lock}|{name}|{version}|{alias}")
 
 
     def ingest_trivy(self):
@@ -474,8 +502,8 @@ class Compiler:
                 ev = cite(self.root, lock, line, pkg) if lock else None
                 if not ev:
                     continue
-                alt = f"trivy|{pkg}|{vid}"
-                if f"osv|{pkg}|{vid}" in self._dedupe or alt in self._dedupe:
+                alt = f"dep|{lock}|{pkg}|{ver}|{vid}"
+                if alt in self._dedupe:
                     continue
                 # Also dedupe when OSV used GHSA and Trivy used CVE for same pkg title overlap
                 skip = False
@@ -559,7 +587,7 @@ class Compiler:
                 evidence=[ev], impact=str(adv.get("description") or summary)[:400],
                 recommendation=f"Upgrade {pkg} per {ghsa}.", source="dependabot",
                 cwes=extract_cwes(adv.get("cve_id")) or [1104],
-                dedupe_key=f"osv|{pkg}|{ghsa}",
+                dedupe_key=f"dep|{lock}|{pkg}|{(dep.get('manifest_path') or '')}|{ghsa}",
             )
         elif kind == "code-scanning":
             rule = alert.get("rule") or {}
@@ -591,11 +619,17 @@ class Compiler:
             return
         auth = "api/src/core/security/auth.service.ts"
         crypto = "api/src/app/modules/public-comment/public-comment.service.ts"
-        if (self.root / auth).is_file():
-            lines = (self.root / auth).read_text(errors="replace").splitlines()
-            pinned = [i for i, ln in enumerate(lines, 1)
-                      if re.search(r"algorithms\s*:\s*\[\s*['\"]RS256['\"]", ln)]
-            if pinned:
+        if inside(self.root, auth):
+            lines = (safe_text(self.root, auth) or "").splitlines()
+            calls = [i for i, ln in enumerate(lines, 1)
+                     if re.search(r"\bverify\s*\(", ln) and not ln.lstrip().startswith(("//", "*"))]
+            def pinned_at(i):
+                window = "\n".join(lines[i - 1:i + 5])
+                return re.search(r"algorithms\s*:\s*\[\s*['\"]RS256['\"]", window)
+            unpinned = [i for i in calls if not pinned_at(i)]
+            pinned = [next(j for j in range(i, i + 6) if re.search(r"algorithms\s*:", lines[j - 1]))
+                      for i in calls if pinned_at(i)]
+            if calls and not unpinned:
                 line = pinned[0]
                 self.fixed.append({
                     "id": "AUTH-001", "file": auth, "line": line,
@@ -604,7 +638,7 @@ class Compiler:
                 })
                 self.domain_counters["AUTH"] = max(self.domain_counters["AUTH"], 1)
             else:
-                verify_line = next((i for i, ln in enumerate(lines, 1) if re.search(r"\bverify\s*\(", ln)), 1)
+                verify_line = unpinned[0] if unpinned else 1
                 ev = cite(self.root, auth, verify_line)
                 if ev:
                     self._add_finding(
@@ -616,8 +650,8 @@ class Compiler:
                         source="file-check", cwes=[327], finding_id="AUTH-001",
                         dedupe_key="seed|AUTH-001",
                     )
-        if (self.root / crypto).is_file():
-            lines = (self.root / crypto).read_text(errors="replace").splitlines()
+        if inside(self.root, crypto):
+            lines = (safe_text(self.root, crypto) or "").splitlines()
             default = [i for i, ln in enumerate(lines, 1)
                        if not ln.lstrip().startswith(("//", "*", "#"))
                        and re.search(r"['\"`]default.?key['\"`]", ln, re.I)]
@@ -649,9 +683,8 @@ class Compiler:
         for path in sorted(self.root.rglob("*.ts")):
             if any(part in ("node_modules", "dist") or part.startswith(".") for part in path.parts):
                 continue
-            try:
-                text = path.read_text(errors="replace")
-            except OSError:
+            text = safe_text(self.root, str(path.relative_to(self.root)))
+            if text is None:
                 continue
             if not re.search(r"@UseGuards\s*\(|implements\s+CanActivate|@Roles\s*\(", text):
                 continue
@@ -686,11 +719,15 @@ class Compiler:
             test_files.extend(p for p in self.root.glob(pat) if "node_modules" not in p.parts)
         test_files = test_files[:50]
         stack_ev, engines = [], ""
-        pkg = load_json(self.root / "package.json")
+        pkg_text = safe_text(self.root, "package.json")
+        try:
+            pkg = json.loads(pkg_text) if pkg_text else None
+        except json.JSONDecodeError:
+            pkg = None
         if isinstance(pkg, dict):
             engines = json.dumps(pkg.get("engines") or {})
             try:
-                lines = (self.root / "package.json").read_text().splitlines()
+                lines = (pkg_text or "").splitlines()
                 line = next((i for i, ln in enumerate(lines, 1) if "engines" in ln), 1)
                 ev = cite(self.root, "package.json", line)
                 if ev:
@@ -728,7 +765,8 @@ class Compiler:
             if not meta:
                 return extra or f"{tool} did not produce usable evidence for this run."
             if not meta.get("ok"):
-                return meta.get("detail") or f"{tool} failed for this run."
+                return (f"{tool} did not produce usable evidence in this run, so this chapter "
+                        f"is not assessed. Reason: {meta.get('detail') or 'unknown failure'}.")
             ver = meta.get("version") or "unknown"
             count = meta.get("count", 0)
             detail = meta.get("detail") or ""

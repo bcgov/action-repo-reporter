@@ -59,14 +59,11 @@ def evidence_ran(evidence_dir: pathlib.Path | None, names) -> bool:
                 if scanned:
                     return True
         elif name == "gitleaks":
-            if isinstance(data, list):
-                return True
-            if isinstance(data, dict) and data == {}:
-                # ensure() placeholder — check NOTES for install failure
-                notes = evidence_dir / "NOTES.txt"
-                text = notes.read_text(errors="replace") if notes.is_file() else ""
-                if "gitleaks not installed" in text or "gitleaks failed" in text:
-                    continue
+            notes = evidence_dir / "NOTES.txt"
+            text = notes.read_text(errors="replace") if notes.is_file() else ""
+            if "gitleaks not installed" in text or "gitleaks failed" in text:
+                continue
+            if isinstance(data, list) or data == {}:
                 return True
         elif name in ("osv-scanner", "trivy"):
             if isinstance(data, dict) and data and data != {}:

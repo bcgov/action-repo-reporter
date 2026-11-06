@@ -182,6 +182,9 @@ jobs:
             done
             if [ -s "$dir/cover-letter.md" ]; then
               cp -vf "$dir/cover-letter.md" "$out/cover-letter.md"
+            else
+              # Never publish a stale digest restored from an earlier report.
+              rm -f "$out/cover-letter.md"
             fi
             organized=$((organized + 1))
           done < <(find artifacts -type f -path "*/reports/findings.json" -print0 2>/dev/null || true)

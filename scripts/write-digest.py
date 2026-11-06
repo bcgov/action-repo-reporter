@@ -168,7 +168,7 @@ def main() -> int:
     p.add_argument("--report", default="reports/rapid-security-assessment.md")
     p.add_argument("--out", default="reports/cover-letter.md")
     p.add_argument("--report-link", default="",
-                   help="Path or URL to the scripted report (defaults to reports/rapid-security/<repo>/...)")
+                   help="Link to the scripted report, relative to the digest (default: sibling rapid-security-assessment.md)")
     args = p.parse_args()
     findings_path = pathlib.Path(args.findings)
     try:
@@ -180,9 +180,8 @@ def main() -> int:
         print("digest skipped: findings not an object", file=sys.stderr)
         return 0
 
-    repo = data.get("repository") or "unknown"
-    short = repo.split("/")[-1]
-    report_link = args.report_link or f"reports/rapid-security/{short}/rapid-security-assessment.md"
+    report_link = args.report_link or __import__("os").path.relpath(
+        pathlib.Path(args.report).resolve(), pathlib.Path(args.out).resolve().parent)
 
     finding_ids, chapters, advisories = allowed_refs(data)
 

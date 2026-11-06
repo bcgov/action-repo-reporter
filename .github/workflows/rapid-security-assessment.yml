@@ -119,11 +119,10 @@ jobs:
           RSA_DIGEST_LLM: ${{ vars.RSA_DIGEST_LLM || 'false' }}
         run: |
           set -euo pipefail
-          short="${TARGET_REPOSITORY##*/}"
           python3 scripts/write-digest.py reports/findings.json \
             --report reports/rapid-security-assessment.md \
             --out reports/cover-letter.md \
-            --report-link "reports/rapid-security/${short}/rapid-security-assessment.md" \
+            --report-link "rapid-security-assessment.md" \
             || echo "::warning::digest step returned non-zero; continuing without digest"
 
       - name: Artifact name
