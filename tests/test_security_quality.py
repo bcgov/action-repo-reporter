@@ -104,6 +104,12 @@ class ChapterGateTests(unittest.TestCase):
         self.data["findings"] = [{"id": "AUTH-999", "severity": "High", "evidence": [{"file": "missing", "line": 1}]}]
         self.assertTrue(self.errors())
 
+    def test_finding_without_severity_cannot_support_analyzed(self):
+        self.analyze()
+        self.data["chapters"][3].update(evidence=[], finding_ids=["AUTH-001"])
+        self.data["findings"] = [{"id": "AUTH-001", "evidence": [{"file": "auth.ts", "line": 1}]}]
+        self.assertTrue(self.errors())
+
     def test_markdown_must_match_status_note_cites_and_scope(self):
         self.analyze()
         correct = render(self.data)

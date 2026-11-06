@@ -38,13 +38,18 @@ def validate(data, markdown, root):
 
     # Only findings that pass cite-or-ask may support an analyzed claim.
     references = {}
-    for entry in data.get("findings", []) + data.get("fixed", []):
-        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+    for collection in ("findings", "fixed"):
+        entries = data.get(collection, [])
+        if not isinstance(entries, list):
+            errors.append(f"{collection} must be an array")
             continue
-        evs = [entry] if "file" in entry else entry.get("evidence", [])
-        if (isinstance(evs, list) and evs and all(cited(e, root) for e in evs)
-                and ("severity" not in entry or entry["severity"] in W)):
-            references[entry["id"]] = entry
+        for entry in entries:
+            if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
+                continue
+            evs = [entry] if "file" in entry else entry.get("evidence", [])
+            severity_ok = collection == "fixed" or entry.get("severity") in W
+            if isinstance(evs, list) and evs and all(cited(e, root) for e in evs) and severity_ok:
+                references[entry["id"]] = entry
 
     headings = list(re.finditer(r"^## (.+?)\s*$", markdown, re.M))
     sections = {}
