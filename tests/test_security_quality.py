@@ -226,7 +226,7 @@ class PipelineFailureTests(unittest.TestCase):
     def test_installer_names_failed_command_and_runtime_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
-            python = root / "python3.12"
+            python = root / "python3.14"
             python.write_text("#!/bin/sh\necho 'venv creation failed: ensurepip unavailable' >&2\nexit 7\n")
             python.chmod(0o755)
             result = subprocess.run(["bash", str(ROOT / "scripts/install-semgrep.sh")],
@@ -235,7 +235,7 @@ class PipelineFailureTests(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn("Semgrep install/runtime preflight failed", result.stderr)
             self.assertIn("ensurepip unavailable", result.stderr)
-            self.assertIn("python3.12 -m venv", result.stderr)
+            self.assertIn("python3.14 -m venv", result.stderr)
 
 
 if __name__ == "__main__":

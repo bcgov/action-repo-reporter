@@ -30,7 +30,7 @@ steps:
   - name: Setup assessment Python
     uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
     with:
-      python-version: '3.12'
+      python-version: '3.14'
   - name: Install scanners (semgrep, gitleaks, osv-scanner, trivy)
     run: |
       set -euo pipefail
