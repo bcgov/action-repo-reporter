@@ -46,7 +46,9 @@ def validate(data, markdown, root):
         for entry in entries:
             if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
                 continue
-            evs = [entry] if "file" in entry else entry.get("evidence", [])
+            # Open findings must satisfy the scorer's evidence-array contract.
+            # Only confirmed-fixed entries may use a top-level file/line cite.
+            evs = ([entry] if "file" in entry else entry.get("evidence", [])) if collection == "fixed" else entry.get("evidence", [])
             severity_ok = collection == "fixed" or entry.get("severity") in W
             if isinstance(evs, list) and evs and all(cited(e, root) for e in evs) and severity_ok:
                 references[entry["id"]] = entry
@@ -100,7 +102,8 @@ def validate(data, markdown, root):
             if not re.search(r"(?<![\w-])" + re.escape(finding) + r"(?![\w-])", body):
                 errors.append(f"{name}: Markdown missing finding {finding}")
         for ev in evidence:
-            if cited(ev, root) and f"{ev['file']}:{ev['line']}" not in body:
+            citation = f"{ev['file']}:{ev['line']}" if cited(ev, root) else None
+            if citation and not re.search(r"(?<![\w:./\\-])" + re.escape(citation) + r"(?![\w:./\\-])", body):
                 errors.append(f"{name}: Markdown missing source citation {ev['file']}:{ev['line']}")
         row = rf"^\|\s*{re.escape(name)}\s*\|\s*{re.escape(str(status))}\s*\|\s*{len(findings)}\s*\|\s*$"
         rows = re.findall(rf"^\|\s*{re.escape(name)}\s*\|.*$", markdown, re.M)

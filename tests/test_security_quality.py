@@ -110,6 +110,26 @@ class ChapterGateTests(unittest.TestCase):
         self.data["findings"] = [{"id": "AUTH-001", "evidence": [{"file": "auth.ts", "line": 1}]}]
         self.assertTrue(self.errors())
 
+    def test_top_level_evidence_only_supports_fixed_not_open_findings(self):
+        self.analyze()
+        self.data["chapters"][3].update(evidence=[], finding_ids=["AUTH-001"])
+        entry = {"id": "AUTH-001", "severity": "High", "file": "auth.ts", "line": 1}
+        self.data["findings"] = [entry]
+        self.assertTrue(self.errors())
+        self.data["findings"] = []
+        self.data["fixed"] = [entry]
+        self.assertEqual([], self.errors())
+
+    def test_markdown_citations_require_exact_file_and_line(self):
+        self.analyze()
+        markdown = render(self.data)
+        for wrong in ("auth.ts:10", "other/auth.ts:1", "/auth.ts:1", "auth.ts:1oops", "other:auth.ts:1"):
+            with self.subTest(citation=wrong):
+                self.assertTrue(any("missing source citation" in e for e in self.errors(markdown.replace("auth.ts:1", wrong))))
+        for valid in ("`auth.ts:1`", "(auth.ts:1)", "[auth.ts:1](https://example.test/source)"):
+            with self.subTest(citation=valid):
+                self.assertEqual([], self.errors(markdown.replace("auth.ts:1", valid)))
+
     def test_markdown_must_match_status_note_cites_and_scope(self):
         self.analyze()
         correct = render(self.data)
