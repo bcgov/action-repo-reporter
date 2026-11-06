@@ -437,6 +437,9 @@ class Compiler:
                 source="osv-scanner", cwes=cwes or [1104],
                 dedupe_key=f"osv|{name}|{vid}",
             )
+            # Record aliases (e.g. CVE ids) so Trivy does not re-add the same advisory.
+            for alias in aliases:
+                self._dedupe.add(f"osv|{name}|{alias}")
 
 
     def ingest_trivy(self):
@@ -615,7 +618,9 @@ class Compiler:
                     )
         if (self.root / crypto).is_file():
             lines = (self.root / crypto).read_text(errors="replace").splitlines()
-            default = [i for i, ln in enumerate(lines, 1) if re.search(r"defaultkey|default.?key", ln, re.I)]
+            default = [i for i, ln in enumerate(lines, 1)
+                       if not ln.lstrip().startswith(("//", "*", "#"))
+                       and re.search(r"['\"`]default.?key['\"`]", ln, re.I)]
             fail_closed = [i for i, ln in enumerate(lines, 1)
                            if "DATA_ENCRYPTION_KEY" in ln and ("must be set" in ln or "throw" in ln)]
             if default:

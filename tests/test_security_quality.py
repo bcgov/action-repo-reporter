@@ -356,5 +356,46 @@ class DigestTests(unittest.TestCase):
 
 
 
+
+class CompileTests(unittest.TestCase):
+    def load(self):
+        spec = importlib.util.spec_from_file_location("compile_findings", ROOT / "scripts/compile-findings.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_crypto_comment_is_not_default_key_and_fail_closed_is_fixed(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "t"
+            svc = root / "api/src/app/modules/public-comment"
+            svc.mkdir(parents=True)
+            (svc / "public-comment.service.ts").write_text(
+                "const key = process.env.DATA_ENCRYPTION_KEY;\n"
+                "// never use a guessable default key\n"
+                "throw new Error('DATA_ENCRYPTION_KEY environment variable must be set.');\n")
+            ev = pathlib.Path(tmp) / "e"; ev.mkdir()
+            c = mod.Compiler("bcgov/nr-fom", root, ev)
+            c.seed_auth_crypto()
+            self.assertEqual(["CRYPTO-001"], [f["id"] for f in c.fixed])
+            self.assertEqual([], c.findings)
+
+    def test_trivy_cve_alias_of_osv_ghsa_is_deduped(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "t"; root.mkdir()
+            (root / "package-lock.json").write_text('{\n "node_modules/joi": {}\n}\n')
+            ev = pathlib.Path(tmp) / "e"; ev.mkdir()
+            (ev / "osv-scanner.json").write_text(json.dumps({"results": [{"source": {"path": "package-lock.json"},
+                "packages": [{"package": {"name": "joi", "version": "18.3.0"}, "vulnerabilities": [
+                    {"id": "GHSA-4528-x5fx-h6hg", "aliases": ["CVE-2026-118772"], "summary": "ReDoS",
+                     "database_specific": {"severity": "HIGH"}}]}]}]}))
+            (ev / "trivy.json").write_text(json.dumps({"Trivy": {"Version": "0.76.1"}, "Results": [
+                {"Target": "package-lock.json", "Vulnerabilities": [
+                    {"VulnerabilityID": "CVE-2026-118772", "PkgName": "joi", "Severity": "HIGH"}]}]}))
+            c = mod.Compiler("bcgov/x", root, ev)
+            c.ingest_osv(); c.ingest_trivy()
+            self.assertEqual(1, len(c.findings))
+
 if __name__ == "__main__":
     unittest.main()
