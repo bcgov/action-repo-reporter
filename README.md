@@ -8,9 +8,6 @@ and GitHub security-alert collection, then has an agent interpret the evidence i
 structured findings plus a Markdown report. Reports land in this repo under
 `reports/rapid-security/<repo>/` via a single pull request.
 
-Legacy FDS code-quality reports under `reports/*-code-quality-assessment.md` are
-kept for history; new runs use the rapid-security path.
-
 ## What you get and where
 
 | Output | Path |

@@ -4,9 +4,8 @@ name: Multi-Repo Rapid Security Assessments
 # optional repos filter), calls the reusable gh-aw rapid-security assessment
 # once per target, then commit-reports collects artifacts into
 # reports/rapid-security/<repo>/ and opens/updates one reports PR.
-# Replaces the former weekly FDS code-quality audit (fds-project-audit.prompt)
-# — FDS stack checks are folded into the rapid-security prompt. Existing
-# reports/*-code-quality-assessment.md history is left in place.
+# Former FDS Full-Stack Project Audit (fds-project-audit.prompt) is removed;
+# stack checks live in the rapid-security prompt.
 #
 # User-facing entrypoint: this workflow only. The prompt is workflow_call-only.
 on:
