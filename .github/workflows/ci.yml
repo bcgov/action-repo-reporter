@@ -34,10 +34,51 @@ jobs:
           # Validate that workflows compile without writing lock files
           gh aw validate .github/workflows
 
+      - name: Compile rapid-security workflow
+        run: gh aw compile rapid-security-assessment.prompt --approve
+
+      # Keep compiler output available when the drift check fails, for reproducible updates.
+      - name: Upload compiled rapid-security workflow
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: compiled-rapid-security-workflow
+          path: .github/workflows/rapid-security-assessment.prompt.lock.yml
+          include-hidden-files: true
+          if-no-files-found: error
+
+      - name: Require prompt and lockfile in sync
+        run: git diff --exit-code -- .github/workflows/rapid-security-assessment.prompt.lock.yml .github/aw/actions-lock.json
+
+  security-quality:
+    name: Security quality regression tests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Test evidence and chapter-substance gates
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Install isolated Semgrep (same path as assessment runner)
+        run: bash scripts/install-semgrep.sh
+
+      - name: Smoke test real Semgrep runtime and usable findings
+        run: |
+          set -euo pipefail
+          bash scripts/run-semgrep.sh "$RUNNER_TEMP/semgrep-evidence" tests/semgrep-smoke.py tests/semgrep-smoke.yml
+          jq -e '.results | any(.check_id | endswith("smoke-eval"))' "$RUNNER_TEMP/semgrep-evidence/semgrep.json"
+
   # Required merge gate aggregator job
   results:
     name: CI Results
-    needs: [validate-workflows]
+    needs: [validate-workflows, security-quality]
     if: always()
     runs-on: ubuntu-24.04
     steps:

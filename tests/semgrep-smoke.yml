@@ -1,0 +1,6 @@
+rules:
+  - id: smoke-eval
+    languages: [python]
+    severity: WARNING
+    message: Test-only eval evidence
+    pattern: eval(...)
