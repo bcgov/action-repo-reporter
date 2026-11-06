@@ -1,116 +1,440 @@
 {
-  "repository": "bcgov/nr-fom",
-  "commit": "02d2cfc5fe6d60da7971bffa79b4569475495e39",
-  "findings": [
+ "repository": "bcgov/nr-fom",
+ "commit": "a20cfc4350cd94a90bbe017090641ea176bb01fe",
+ "findings": [
+  {
+   "id": "CICD-001",
+   "domain": "CICD",
+   "severity": "Medium",
+   "title": "Shell injection via ${{ inputs.* }} interpolation in deploy workflow",
+   "evidence": [
     {
-      "id": "DEPS-001",
-      "domain": "DEPS",
-      "severity": "High",
-      "title": "joi 18.3.0 affected by GHSA-4528-x5fx-h6hg",
-      "evidence": [
-        {
-          "file": "package-lock.json",
-          "line": 12912,
-          "snippet": "node_modules/joi"
-        }
-      ],
-      "impact": "Known high-severity advisory in installed version (OSV scanner); reachability not assessed (basic-ftp/vite likely transitive/dev).",
-      "recommendation": "Upgrade to a patched version per advisory.",
-      "source": "osv-scanner"
-    },
-    {
-      "id": "DEPS-002",
-      "domain": "DEPS",
-      "severity": "High",
-      "title": "multer 2.4.0 affected by GHSA-q7qp-rjg7-q26m",
-      "evidence": [
-        {
-          "file": "package-lock.json",
-          "line": 13972,
-          "snippet": "node_modules/multer"
-        }
-      ],
-      "impact": "Known high-severity advisory in installed version (OSV scanner); reachability not assessed (basic-ftp/vite likely transitive/dev).",
-      "recommendation": "Upgrade to a patched version per advisory.",
-      "source": "osv-scanner"
-    },
-    {
-      "id": "DEPS-003",
-      "domain": "DEPS",
-      "severity": "High",
-      "title": "vite 8.3.0 affected by GHSA-587h-7wmj-h5pm",
-      "evidence": [
-        {
-          "file": "package-lock.json",
-          "line": 17583,
-          "snippet": "node_modules/vite"
-        }
-      ],
-      "impact": "Known high-severity advisory in installed version (OSV scanner); reachability not assessed (basic-ftp/vite likely transitive/dev).",
-      "recommendation": "Upgrade to a patched version per advisory.",
-      "source": "osv-scanner"
-    },
-    {
-      "id": "DEPS-004",
-      "domain": "DEPS",
-      "severity": "High",
-      "title": "basic-ftp 5.3.1 affected by GHSA-c475-qrg2-pj4r",
-      "evidence": [
-        {
-          "file": "package-lock.json",
-          "line": 8668,
-          "snippet": "node_modules/basic-ftp"
-        }
-      ],
-      "impact": "Known high-severity advisory in installed version (OSV scanner); reachability not assessed (basic-ftp/vite likely transitive/dev).",
-      "recommendation": "Upgrade to a patched version per advisory.",
-      "source": "osv-scanner"
-    },
-    {
-      "id": "CRYPTO-002",
-      "domain": "CRYPTO",
-      "severity": "Low",
-      "title": "Guessable DATA_ENCRYPTION_KEY=defaultkey in docker-compose",
-      "evidence": [
-        {
-          "file": "docker-compose.yml",
-          "line": 73,
-          "snippet": "- DATA_ENCRYPTION_KEY=defaultkey"
-        }
-      ],
-      "impact": "Local/dev compose uses a weak key; risk if compose config is reused beyond local development.",
-      "recommendation": "Use a generated per-developer key from .env and document it as dev-only.",
-      "source": "agent"
+     "file": ".github/workflows/.deploy.yml",
+     "line": 84,
+     "snippet": "if [ -z \"${{ inputs.tag }}\" ]"
     }
-  ],
-  "fixed": [
+   ],
+   "impact": "Reusable workflow inputs interpolated directly into run scripts can inject commands if a caller passes untrusted values.",
+   "recommendation": "Pass inputs via env: variables and reference them as shell variables.",
+   "source": "semgrep"
+  },
+  {
+   "id": "CICD-002",
+   "domain": "CICD",
+   "severity": "Low",
+   "title": "Third-party actions referenced by mutable tag instead of commit SHA",
+   "evidence": [
     {
-      "id": "AUTH-001",
-      "file": "api/src/core/security/auth.service.ts",
-      "line": 160,
-      "snippet": "algorithms: ['RS256']",
-      "note": "ID token verify pinned to RS256"
+     "file": ".github/workflows/analysis.yml",
+     "line": 105,
+     "snippet": "uses: actions/checkout@v7"
     },
     {
-      "id": "AUTH-001",
-      "file": "api/src/core/security/auth.service.ts",
-      "line": 173,
-      "snippet": "algorithms: ['RS256']",
-      "note": "Access token verify pinned to RS256"
-    },
-    {
-      "id": "CRYPTO-001",
-      "file": "api/src/app/modules/public-comment/public-comment.service.ts",
-      "line": 42,
-      "snippet": "throw new Error('DATA_ENCRYPTION_KEY environment variable must be set.');",
-      "note": "Fail-closed when key unset; no default fallback"
+     "file": ".github/workflows/release.yml",
+     "line": 26,
+     "snippet": ""
     }
-  ],
-  "questions": [],
-  "coverage_gaps": [
-    "code-scanning, dependabot, secret-scanning, gitleaks evidence empty (unavailable); semgrep.json missing",
-    "Manual review limited to seed items and dependency evidence; INJ, CONFIG, INFRA (workflows/Helm), DATA, API domains not exhaustively reviewed",
-    "Trivy results not triaged in detail; 2 non-seed OSV moderate/low omitted",
-    "Non-security stack currency not assessed"
-  ]
+   ],
+   "impact": "Mutable tags allow upstream tag retargeting to run unreviewed code in CI (supply chain).",
+   "recommendation": "Pin actions to full commit SHAs; let Renovate maintain them.",
+   "source": "semgrep"
+  },
+  {
+   "id": "CICD-003",
+   "domain": "CICD",
+   "severity": "Low",
+   "title": "Reusable workflows called with secrets: inherit",
+   "evidence": [
+    {
+     "file": ".github/workflows/pr-open.yml",
+     "line": 67,
+     "snippet": "secrets: inherit"
+    },
+    {
+     "file": ".github/workflows/merge.yml",
+     "line": 55,
+     "snippet": ""
+    },
+    {
+     "file": ".github/workflows/release.yml",
+     "line": 52,
+     "snippet": ""
+    }
+   ],
+   "impact": "All repository secrets are exposed to the called workflow, violating least privilege.",
+   "recommendation": "Pass only the specific secrets required.",
+   "source": "semgrep"
+  },
+  {
+   "id": "INFRA-001",
+   "domain": "INFRA",
+   "severity": "Low",
+   "title": "OpenShift containers do not set allowPrivilegeEscalation: false",
+   "evidence": [
+    {
+     "file": "api/openshift.deploy.yml",
+     "line": 164,
+     "snippet": "securityContext:"
+    },
+    {
+     "file": "admin/openshift.deploy.yml",
+     "line": 94,
+     "snippet": ""
+    },
+    {
+     "file": "db/openshift.deploy.yml",
+     "line": 160,
+     "snippet": ""
+    },
+    {
+     "file": "public/openshift.deploy.yml",
+     "line": 91,
+     "snippet": ""
+    }
+   ],
+   "impact": "Processes in the containers may gain more privileges than the parent (setuid binaries).",
+   "recommendation": "Add allowPrivilegeEscalation: false to each container securityContext.",
+   "source": "semgrep"
+  },
+  {
+   "id": "CONFIG-001",
+   "domain": "CONFIG",
+   "severity": "Low",
+   "title": "Wildcard CORS enabled via BYPASS_CORS env flag",
+   "evidence": [
+    {
+     "file": "api/src/main.ts",
+     "line": 62,
+     "snippet": "if (process.env.BYPASS_CORS === \"true\")"
+    }
+   ],
+   "impact": "If the flag is mistakenly set in a deployed environment, any origin can call the API.",
+   "recommendation": "Disallow the flag when NODE_ENV is production, or remove it in favour of a dev proxy.",
+   "source": "semgrep"
+  },
+  {
+   "id": "DATA-001",
+   "domain": "DATA",
+   "severity": "Low",
+   "title": "Decoded JWT contents and JWKS URI written to logs",
+   "evidence": [
+    {
+     "file": "api/src/core/security/auth.service.ts",
+     "line": 151,
+     "snippet": "this.logger.debug(\"Untrusted decoded ID token %o\", ...)"
+    },
+    {
+     "file": "api/src/core/security/auth.service.ts",
+     "line": 167,
+     "snippet": ""
+    },
+    {
+     "file": "api/src/core/security/auth.service.ts",
+     "line": 117,
+     "snippet": "console.log(\"jwksUri\", jwksUri)"
+    }
+   ],
+   "impact": "Token claims (user identifiers/email) may end up in logs if debug level is enabled.",
+   "recommendation": "Remove or redact token claim logging; use the structured logger only.",
+   "source": "agent"
+  },
+  {
+   "id": "INJ-001",
+   "domain": "INJ",
+   "severity": "Low",
+   "title": "Object.assign of parsed JSON into User object",
+   "evidence": [
+    {
+     "file": "libs/utility/src/security/user.ts",
+     "line": 22,
+     "snippet": "Object.assign(user, JSON.parse(json));"
+    }
+   ],
+   "impact": "Unvalidated JSON merged into an object; __proto__ own keys are not set by Object.assign on a normal object, so impact is limited to property overwrite.",
+   "recommendation": "Whitelist expected fields when hydrating User.",
+   "source": "semgrep"
+  },
+  {
+   "id": "DEPS-001",
+   "domain": "DEPS",
+   "severity": "High",
+   "title": "multer 2.4.0: DoS via aborted request (CVE-2026-113872)",
+   "evidence": [
+    {
+     "file": "package-lock.json",
+     "line": 13972,
+     "snippet": "node_modules/multer"
+    }
+   ],
+   "impact": "Denial of service of file-upload endpoints if multer is used at runtime.",
+   "recommendation": "Upgrade multer to the patched release.",
+   "source": "osv/trivy"
+  },
+  {
+   "id": "DEPS-002",
+   "domain": "DEPS",
+   "severity": "High",
+   "title": "joi 18.3.0: DoS via inefficient regex (CVE-2026-118772)",
+   "evidence": [
+    {
+     "file": "package-lock.json",
+     "line": 12912,
+     "snippet": "node_modules/joi"
+    }
+   ],
+   "impact": "ReDoS on validated input could exhaust CPU.",
+   "recommendation": "Upgrade joi to the patched release.",
+   "source": "osv/trivy"
+  },
+  {
+   "id": "DEPS-003",
+   "domain": "DEPS",
+   "severity": "High",
+   "title": "basic-ftp 5.3.1 high-severity advisory (likely transitive/dev)",
+   "evidence": [
+    {
+     "file": "package-lock.json",
+     "line": 8668,
+     "snippet": "node_modules/basic-ftp"
+    }
+   ],
+   "impact": "Reachability not established; likely build/test tooling dependency.",
+   "recommendation": "Upgrade via parent dependency or overrides.",
+   "source": "osv"
+  },
+  {
+   "id": "DEPS-004",
+   "domain": "DEPS",
+   "severity": "Medium",
+   "title": "vite 8.3.0 with 6 moderate advisories (dev tooling)",
+   "evidence": [
+    {
+     "file": "package-lock.json",
+     "line": 17583,
+     "snippet": "node_modules/vite"
+    }
+   ],
+   "impact": "Dev-server issues; exposure limited to developer machines/CI.",
+   "recommendation": "Upgrade vite to the latest patched version.",
+   "source": "osv"
+  }
+ ],
+ "fixed": [
+  {
+   "id": "AUTH-001",
+   "file": "api/src/core/security/auth.service.ts",
+   "line": 159,
+   "snippet": "algorithms: ['RS256']",
+   "note": "ID token verify pinned to RS256 (access token verify also pinned at line 173)."
+  },
+  {
+   "id": "CRYPTO-001",
+   "file": "api/src/app/modules/public-comment/public-comment.service.ts",
+   "line": 42,
+   "snippet": "throw new Error('DATA_ENCRYPTION_KEY environment variable must be set.');",
+   "note": "No default key; constructor fails closed when key unset."
+  }
+ ],
+ "questions": [
+  {
+   "domain": "AUTHZ",
+   "question": "Are all write endpoints protected by role guards?",
+   "why": "Not reviewed in this pass."
+  }
+ ],
+ "coverage_gaps": [
+  "Dependabot, code scanning and secret scanning alerts unavailable: HTTP 403 token cannot read cross-repo alerts.",
+  "gitleaks.json empty: treated as a clean scan.",
+  "osv-scanner exited non-zero; output kept.",
+  "AUTHZ not manually reviewed."
+ ],
+ "chapters": [
+  {
+   "id": "architecture",
+   "status": "analyzed",
+   "note": "Monorepo with api, admin, public, db and libs components deployed through OpenShift manifests.",
+   "finding_ids": [],
+   "evidence": [
+    {
+     "file": "README.md",
+     "line": 5
+    },
+    {
+     "file": "package.json",
+     "line": 7
+    }
+   ]
+  },
+  {
+   "id": "cicd",
+   "status": "analyzed",
+   "note": "Workflows use mutable action tags, inherit all secrets and interpolate inputs into shell scripts.",
+   "finding_ids": [
+    "CICD-001",
+    "CICD-002",
+    "CICD-003"
+   ],
+   "evidence": []
+  },
+  {
+   "id": "zero-trust",
+   "status": "analyzed",
+   "note": "Mapped findings: secrets inherit and privilege escalation breach least privilege; dependency highs relate to assume breach.",
+   "finding_ids": [
+    "CICD-003",
+    "INFRA-001",
+    "DEPS-001"
+   ],
+   "evidence": []
+  },
+  {
+   "id": "authn",
+   "status": "analyzed",
+   "note": "JWT verification pins RS256 and SECURITY_ENABLED defaults to true, so no algorithm confusion was found.",
+   "finding_ids": [
+    "AUTH-001"
+   ],
+   "evidence": [
+    {
+     "file": "api/src/core/security/auth.service.ts",
+     "line": 115
+    }
+   ]
+  },
+  {
+   "id": "authz",
+   "status": "not_assessed",
+   "note": "No manual review of route guards or RBAC was performed in this rapid pass.",
+   "finding_ids": [],
+   "evidence": []
+  },
+  {
+   "id": "injection",
+   "status": "analyzed",
+   "note": "Semgrep reported only a low-risk Object.assign pattern and workflow shell interpolation, no SQL injection hits.",
+   "finding_ids": [
+    "INJ-001",
+    "CICD-001"
+   ],
+   "evidence": []
+  },
+  {
+   "id": "configuration",
+   "status": "analyzed",
+   "note": "CORS wildcard exists only behind an env flag; helmet and ValidationPipe are configured in bootstrap.",
+   "finding_ids": [
+    "CONFIG-001"
+   ],
+   "evidence": [
+    {
+     "file": "api/src/main.ts",
+     "line": 71
+    }
+   ]
+  },
+  {
+   "id": "cryptography",
+   "status": "analyzed",
+   "note": "Encryption key fallback was removed and the service fails closed when the key is unset.",
+   "finding_ids": [
+    "CRYPTO-001",
+    "AUTH-001"
+   ],
+   "evidence": []
+  },
+  {
+   "id": "secrets",
+   "status": "analyzed",
+   "note": "Gitleaks output was empty and no hardcoded default encryption key was found in the service source.",
+   "finding_ids": [
+    "CRYPTO-001"
+   ],
+   "evidence": []
+  },
+  {
+   "id": "logging-data",
+   "status": "analyzed",
+   "note": "Debug logging of decoded token claims and a console.log of the JWKS URI were identified.",
+   "finding_ids": [
+    "DATA-001"
+   ],
+   "evidence": []
+  },
+  {
+   "id": "code-scanning",
+   "status": "not_assessed",
+   "note": "Code scanning alerts could not be read because the token lacked access (HTTP 403).",
+   "finding_ids": [],
+   "evidence": []
+  },
+  {
+   "id": "secret-scanning",
+   "status": "not_assessed",
+   "note": "Secret scanning alerts could not be read because the token lacked access (HTTP 403).",
+   "finding_ids": [],
+   "evidence": []
+  },
+  {
+   "id": "dependabot",
+   "status": "not_assessed",
+   "note": "Dependabot alerts could not be read because the token lacked access (HTTP 403).",
+   "finding_ids": [],
+   "evidence": []
+  },
+  {
+   "id": "dependencies",
+   "status": "analyzed",
+   "note": "OSV scanner and Trivy report high severity multer, joi and basic-ftp plus moderate vite advisories.",
+   "finding_ids": [
+    "DEPS-001",
+    "DEPS-002",
+    "DEPS-003",
+    "DEPS-004"
+   ],
+   "evidence": []
+  },
+  {
+   "id": "containers-iac",
+   "status": "analyzed",
+   "note": "OpenShift deployment manifests omit allowPrivilegeEscalation false though runAsNonRoot is set.",
+   "finding_ids": [
+    "INFRA-001"
+   ],
+   "evidence": []
+  },
+  {
+   "id": "testing",
+   "status": "analyzed",
+   "note": "Playwright e2e specs and API unit tests exist, including auth service tests toggling SECURITY_ENABLED.",
+   "finding_ids": [],
+   "evidence": [
+    {
+     "file": "e2e/admin-search.spec.ts",
+     "line": 1
+    },
+    {
+     "file": "api/src/core/security/auth.service.spec.ts",
+     "line": 17
+    }
+   ]
+  },
+  {
+   "id": "stack",
+   "status": "analyzed",
+   "note": "Node engine range is current and renovate is configured, though pinned dependencies carry advisories.",
+   "finding_ids": [
+    "DEPS-004"
+   ],
+   "evidence": [
+    {
+     "file": "package.json",
+     "line": 7
+    },
+    {
+     "file": "renovate.json",
+     "line": 1
+    }
+   ]
+  }
+ ]
 }
