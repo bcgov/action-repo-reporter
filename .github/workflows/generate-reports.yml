@@ -135,8 +135,15 @@ jobs:
 
       - name: Organize Reports
         id: organize
+        env:
+          ASSESS_RESULT: ${{ needs.assess.result }}
         run: |
           set -euo pipefail
+          # Failed preflight/substance gates must never publish even if diagnostic artifacts exist.
+          if [ "$ASSESS_RESULT" != "success" ]; then
+            echo "::error::Assessment failed ($ASSESS_RESULT); refusing to publish diagnostic/stale reports"
+            exit 1
+          fi
           mkdir -p artifacts
           find artifacts -type f 2>/dev/null | sort || true
           organized=0

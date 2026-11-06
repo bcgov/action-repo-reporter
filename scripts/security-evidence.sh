@@ -82,8 +82,7 @@ run() {
   ensure "$OUT/$name.json" '{}'
 }
 
-export PATH="${HOME}/.local/bin:${PATH}"
-run semgrep  semgrep scan --config auto --json -o "$OUT/semgrep.json" target
+bash "$(dirname "${BASH_SOURCE[0]}")/run-semgrep.sh" "$OUT" target || exit 1
 # gitleaks exits 1 when secrets are found — treat that as success with a report.
 if command -v gitleaks >/dev/null 2>&1; then
   gitleaks detect -s target --redact --report-format json --report-path "$OUT/gitleaks.json" --no-banner
