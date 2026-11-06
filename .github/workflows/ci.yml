@@ -78,10 +78,66 @@ jobs:
           bash scripts/run-semgrep.sh "$RUNNER_TEMP/semgrep-evidence" "$RUNNER_TEMP/semgrep-smoke.py" tests/semgrep-smoke.yml
           jq -e '.results | any(.check_id | endswith("smoke-eval"))' "$RUNNER_TEMP/semgrep-evidence/semgrep.json"
 
+      # The assessment calls run-semgrep.sh without a config; test that exact path.
+      - name: Smoke test default Semgrep config (no override, metrics off)
+        run: |
+          set -euo pipefail
+          bash scripts/run-semgrep.sh "$RUNNER_TEMP/semgrep-default" "$RUNNER_TEMP/semgrep-smoke.py"
+          jq -e '.results | any(.check_id | endswith("eval-detected"))' "$RUNNER_TEMP/semgrep-default/semgrep.json"
+
+  changes:
+    name: Detect report pipeline changes
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      report: ${{ steps.diff.outputs.report }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          fetch-depth: 0
+
+      - name: Diff against base
+        id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
+          echo "$changed"
+          if echo "$changed" | grep -Eq '^(scripts/|tests/|\.github/aw/|\.github/workflows/(ci|generate-reports)\.yml$|\.github/workflows/rapid-security-assessment\.prompt\.(md|lock\.yml)$)'; then
+            echo "report=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "report=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Real assessment of public bcgov/nr-fom; dry_run never opens a reports PR.
+  dry-run-reports:
+    name: Dry-run reports (nr-fom)
+    needs: changes
+    # Forks and Dependabot get no secrets or Copilot access, so they skip it.
+    if: >-
+      needs.changes.outputs.report == 'true'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
+    # A called workflow cannot exceed the caller; match generate-reports.yml.
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+      pull-requests: write
+      copilot-requests: write
+    uses: ./.github/workflows/generate-reports.yml
+    with:
+      repos: nr-fom
+      dry_run: true
+    secrets: inherit
+
   # Required merge gate aggregator job
   results:
     name: CI Results
-    needs: [validate-workflows, security-quality]
+    needs: [validate-workflows, security-quality, changes, dry-run-reports]
     if: always()
     runs-on: ubuntu-24.04
     steps:

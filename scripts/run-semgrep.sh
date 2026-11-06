@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # A clean scan has results=[] AND scanned paths; {} is never scan evidence.
-# Usage: run-semgrep.sh outdir target [config] (config defaults to registry auto)
+# Usage: run-semgrep.sh outdir target [config] (config defaults to registry p/default;
+# `auto` cannot be used because it requires metrics, which stay off)
 set -euo pipefail
-out="$1"; target="$2"; config="${3:-auto}"
+out="$1"; target="$2"; config="${3:-p/default}"
 mkdir -p "$out"
 rm -f "$out/semgrep.json" "$out/semgrep.json.tmp"
 if ! command -v semgrep >/dev/null 2>&1; then
