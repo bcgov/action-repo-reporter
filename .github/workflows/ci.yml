@@ -116,7 +116,11 @@ jobs:
   dry-run-reports:
     name: Dry-run reports (nr-fom)
     needs: changes
-    if: needs.changes.outputs.report == 'true'
+    # Forks and Dependabot get no secrets or Copilot access, so they skip it.
+    if: >-
+      needs.changes.outputs.report == 'true'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
     # A called workflow cannot exceed the caller; match generate-reports.yml.
     permissions:
       actions: read
