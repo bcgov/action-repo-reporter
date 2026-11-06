@@ -8,6 +8,8 @@ name: Multi-Repo Rapid Security Assessments
 # stack checks live in the rapid-security prompt.
 #
 # User-facing entrypoint: this workflow only. The prompt is workflow_call-only.
+# workflow_call exists so PR CI can dry-run it (dry_run skips publishing);
+# dry_run is deliberately absent from the dispatch form.
 on:
   schedule:
     - cron: '0 14 1 * *' # 1st of month 14:00 UTC (off the old Monday 08:00 UTC slot)
@@ -21,6 +23,18 @@ on:
         required: false
         default: ""
         type: string
+  workflow_call:
+    inputs:
+      repos:
+        description: Optional comma-separated subset; empty = all five (same as dispatch).
+        required: false
+        default: ""
+        type: string
+      dry_run:
+        description: Assess and validate artifacts only; never open or update the reports PR.
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -40,7 +54,7 @@ jobs:
       - name: Resolve target list
         id: pick
         env:
-          REPOS_INPUT: ${{ github.event.inputs.repos || '' }}
+          REPOS_INPUT: ${{ inputs.repos }}
         run: |
           set -euo pipefail
           ALL='["bcgov/nr-fom","bcgov/nr-hydrometric-rating-curve","bcgov/nr-results-exam","bcgov/nr-seedtransfer-map","bcgov/pubcode"]'
@@ -182,6 +196,7 @@ jobs:
 
       - name: Open or Update Reports PR
         id: cpr
+        if: ${{ !inputs.dry_run }}
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           branch: chore/rapid-security-reports
@@ -193,6 +208,7 @@ jobs:
           delete-branch: true
 
       - name: Require publish
+        if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
           # peter-evans outputs: pull-request-number / pull-request-operation (created|updated|closed|false)
