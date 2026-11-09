@@ -1,0 +1,150 @@
+name: Rapid Security Assessment
+
+# Per-target assessment called by generate-reports.yml only (workflow_call).
+# Scripted path: evidence -> compile-findings -> render-report -> validate -> score
+# -> optional cover-letter digest. Copilot/gh-aw is not the author of findings.json
+# or the chapter markdown.
+on:
+  workflow_call:
+    inputs:
+      target_repository:
+        description: owner/name to assess
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  assess:
+    name: Assess ${{ inputs.target_repository }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout reporter
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup assessment Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install scanners (semgrep, gitleaks, osv-scanner, trivy)
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          mkdir -p "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          bash scripts/install-semgrep.sh
+          tmp="$(mktemp -d)"; cd "$tmp"
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | tar xz gitleaks && mv gitleaks "$HOME/.local/bin/" \
+            || echo "::warning::gitleaks install failed — evidence step will skip it"
+          curl -fsSLo osv-scanner https://github.com/google/osv-scanner/releases/download/v1.9.1/osv-scanner_linux_amd64 \
+            && chmod +x osv-scanner && mv osv-scanner "$HOME/.local/bin/" \
+            || echo "::warning::osv-scanner install failed — evidence step will skip it"
+          curl -fsSL https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz \
+            | tar xz trivy && mv trivy "$HOME/.local/bin/" \
+            || echo "::warning::trivy install failed — evidence step will skip it"
+          command -v gitleaks >/dev/null && gitleaks version || true
+          command -v osv-scanner >/dev/null && osv-scanner --version || true
+          command -v trivy >/dev/null && trivy --version || true
+
+      - name: Collect security evidence
+        env:
+          GH_TOKEN: ${{ secrets.SECURITY_ALERTS_TOKEN || github.token }}
+          TARGET_REPOSITORY: ${{ inputs.target_repository }}
+        run: bash scripts/security-evidence.sh "$TARGET_REPOSITORY" evidence
+
+      - name: Compile findings.json from evidence
+        env:
+          TARGET_REPOSITORY: ${{ inputs.target_repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          python3 scripts/compile-findings.py \
+            --repo "$TARGET_REPOSITORY" \
+            --repo-dir target \
+            --evidence evidence \
+            --out reports/findings.json
+
+      - name: Render rapid-security-assessment.md
+        run: |
+          set -euo pipefail
+          python3 scripts/render-report.py reports/findings.json \
+            --out reports/rapid-security-assessment.md
+
+      - name: Require report files
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in reports/findings.json reports/rapid-security-assessment.md; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Missing required publish input: $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Rapid security assessment produced no report files — refusing to succeed"
+            exit 1
+          fi
+          ls -la reports/findings.json reports/rapid-security-assessment.md
+
+      - name: Enforce chapter substance
+        run: |
+          set -euo pipefail
+          python3 scripts/validate-chapters.py \
+            reports/findings.json reports/rapid-security-assessment.md \
+            --repo-dir target \
+            --evidence-dir evidence
+
+      - name: Validate and score findings
+        env:
+          TARGET_REPOSITORY: ${{ inputs.target_repository }}
+        run: |
+          set -euo pipefail
+          require=()
+          if [ "$TARGET_REPOSITORY" = "bcgov/nr-fom" ]; then
+            require=(--require AUTH-001 CRYPTO-001)
+          fi
+          python3 scripts/score.py reports/findings.json --repo-dir target --out reports/score.json "${require[@]}"
+
+      - name: Optional cover-letter digest (best-effort)
+        env:
+          TARGET_REPOSITORY: ${{ inputs.target_repository }}
+          # LLM off by default in CI; set RSA_DIGEST_LLM=true in repo vars later if desired.
+          RSA_DIGEST_LLM: ${{ vars.RSA_DIGEST_LLM || 'false' }}
+        run: |
+          set -euo pipefail
+          python3 scripts/write-digest.py reports/findings.json \
+            --report reports/rapid-security-assessment.md \
+            --out reports/cover-letter.md \
+            --report-link "rapid-security-assessment.md" \
+            || echo "::warning::digest step returned non-zero; continuing without digest"
+
+      - name: Artifact name
+        if: always()
+        id: art
+        env:
+          TARGET_REPOSITORY: ${{ inputs.target_repository }}
+        run: |
+          set -euo pipefail
+          # Artifact names cannot contain '/'.
+          echo "name=$(printf '%s' "$TARGET_REPOSITORY" | tr '/' '-')-rapid-security" >> "$GITHUB_OUTPUT"
+
+      - name: Upload assessment
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.art.outputs.name }}
+          path: |
+            reports/findings.json
+            reports/score.json
+            reports/rapid-security-assessment.md
+            reports/cover-letter.md
+            evidence/*.json
+            evidence/NOTES.txt
+          if-no-files-found: error
