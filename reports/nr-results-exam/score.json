@@ -1,0 +1,14 @@
+{
+  "score": 72,
+  "counts": {
+    "Critical": 0,
+    "High": 1,
+    "Medium": 27,
+    "Low": 13
+  },
+  "accepted": 41,
+  "rejected": [],
+  "fixed_accepted": [],
+  "fixed_rejected": [],
+  "missing_required": []
+}
