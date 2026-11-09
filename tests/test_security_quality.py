@@ -485,5 +485,229 @@ class ReviewRegressionTests(unittest.TestCase):
             c = mod.Compiler("bcgov/x", root, ev); c.ingest_gitleaks()
             self.assertFalse(c.tool_meta["gitleaks"]["ok"])
 
+
+class ComponentTopologyTests(unittest.TestCase):
+    def load_modules(self):
+        spec_cc = importlib.util.spec_from_file_location("cc", ROOT / "scripts/classify-components.py")
+        mod_cc = importlib.util.module_from_spec(spec_cc)
+        spec_cc.loader.exec_module(mod_cc)
+
+        spec_cf = importlib.util.spec_from_file_location("cf", ROOT / "scripts/compile-findings.py")
+        mod_cf = importlib.util.module_from_spec(spec_cf)
+        spec_cf.loader.exec_module(mod_cf)
+
+        spec_rr = importlib.util.spec_from_file_location("rr", ROOT / "scripts/render-report.py")
+        mod_rr = importlib.util.module_from_spec(spec_rr)
+        spec_rr.loader.exec_module(mod_rr)
+        return mod_cc, mod_cf, mod_rr
+
+    def test_nr_fom_layout_classification(self):
+        cc, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            (t / "admin" / "angular.json").parent.mkdir(parents=True)
+            (t / "admin" / "angular.json").write_text("{}")
+            (t / "admin" / "Caddyfile").write_text(":8080")
+            (t / "public" / "angular.json").parent.mkdir(parents=True)
+            (t / "public" / "angular.json").write_text("{}")
+            (t / "api" / "src" / "core" / "security").mkdir(parents=True)
+            (t / "api" / "nest-cli.json").write_text("{}")
+            (t / "db").mkdir()
+
+            comps = cc.classify_components(t, "bcgov/nr-fom")
+            c_ids = {c["id"]: c for c in comps}
+
+            self.assertIn("admin-web-server", c_ids)
+            self.assertIn("admin", c_ids)
+            self.assertEqual("frontend", c_ids["admin"]["type"])
+            self.assertIn("public", c_ids)
+            self.assertEqual("frontend", c_ids["public"]["type"])
+            self.assertIn("api", c_ids)
+            self.assertEqual("api", c_ids["api"]["type"])
+            self.assertIn("auth-gateway", c_ids)
+            self.assertEqual("auth-gateway", c_ids["auth-gateway"]["type"])
+            self.assertIn("database", c_ids)
+            self.assertEqual("database", c_ids["database"]["type"])
+
+    def test_nested_portals_and_batch_classification(self):
+        cc, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            (t / "frontend" / "src" / "app" / "admin").mkdir(parents=True)
+            (t / "frontend" / "src" / "app" / "public").mkdir(parents=True)
+            (t / "frontend" / "angular.json").write_text("{}")
+            (t / "api" / "src" / "core" / "security").mkdir(parents=True)
+            (t / "api" / "src" / "batch").mkdir(parents=True)
+            (t / "api" / "nest-cli.json").write_text("{}")
+            (t / "Caddyfile").write_text(":8080")
+            (t / "db").mkdir()
+
+            comps = cc.classify_components(t, "bcgov/nr-fom")
+            c_ids = {c["id"]: c for c in comps}
+
+            self.assertIn("admin-portal", c_ids)
+            self.assertIn("public-portal", c_ids)
+            self.assertIn("auth-gateway", c_ids)
+            self.assertIn("api-src-batch", c_ids)
+            self.assertEqual("batch", c_ids["api-src-batch"]["type"])
+
+    def test_django_and_crawler_classification(self):
+        cc, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            (t / "frontend" / "rctool" / "migrations").mkdir(parents=True)
+            (t / "frontend" / "manage.py").write_text("# django")
+            (t / "frontend" / "nginx.conf.template").write_text("# nginx")
+            (t / "compose.yml").write_text("services:\n  db:\n    image: postgres:15\n")
+            comps = cc.classify_components(t, "bcgov/nr-hydrometric-rating-curve")
+            c_ids = {c["id"]: c for c in comps}
+            self.assertIn("frontend-ingress", c_ids)
+            self.assertIn("frontend-app", c_ids)
+            self.assertIn("database", c_ids)
+
+        with tempfile.TemporaryDirectory() as tmp2:
+            t2 = pathlib.Path(tmp2)
+            (t2 / "api" / "src").mkdir(parents=True)
+            (t2 / "api" / "package.json").write_text('{"dependencies": {"express": "^4.0"}}')
+            (t2 / "crawler" / "src").mkdir(parents=True)
+            (t2 / "database").mkdir()
+            comps2 = cc.classify_components(t2, "bcgov/pubcode")
+            c_ids2 = {c["id"]: c for c in comps2}
+            self.assertIn("crawler", c_ids2)
+            self.assertEqual("batch", c_ids2["crawler"]["type"])
+            self.assertIn("api", c_ids2)
+            self.assertIn("database", c_ids2)
+
+    def test_finding_attribution_and_risk_ranking(self):
+        cc, cf, rr = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "target"; root.mkdir()
+            (root / "api" / "src" / "core" / "security").mkdir(parents=True)
+            (root / "api" / "nest-cli.json").write_text("{}")
+            (root / "admin" / "angular.json").parent.mkdir(parents=True)
+            (root / "admin" / "angular.json").write_text("{}")
+            (root / "db").mkdir()
+            ev = pathlib.Path(tmp) / "evidence"; ev.mkdir()
+
+            compiler = cf.Compiler("bcgov/nr-fom", root, ev)
+            compiler.findings = [
+                {
+                    "id": "AUTH-002",
+                    "severity": "Critical",
+                    "title": "Bypass in auth gateway",
+                    "evidence": [{"file": "api/src/core/security/auth.guard.ts", "line": 10}],
+                    "impact": "Full authentication bypass",
+                    "recommendation": "Fix the guard check",
+                    "domain": "AUTH",
+                    "source": "semgrep",
+                },
+                {
+                    "id": "DEPS-001",
+                    "severity": "High",
+                    "title": "Vulnerable lib in admin",
+                    "evidence": [{"file": "admin/package.json", "line": 15}],
+                    "impact": "XSS in admin portal",
+                    "recommendation": "Upgrade library",
+                    "domain": "DEPS",
+                    "source": "osv-scanner",
+                },
+                {
+                    "id": "API-001",
+                    "severity": "Medium",
+                    "title": "Unvalidated param in api",
+                    "evidence": [{"file": "api/src/controllers/fom.controller.ts", "line": 20}],
+                    "impact": "Input validation gap",
+                    "recommendation": "Use class-validator",
+                    "domain": "INJ",
+                    "source": "semgrep",
+                },
+            ]
+
+            data = compiler.run()
+            self.assertIn("components", data)
+            self.assertIn("architecture", data)
+            self.assertIn("mermaid", data["architecture"])
+            self.assertTrue(data["architecture"]["mermaid"].startswith("graph TD"))
+
+            findings_by_id = {f["id"]: f for f in data["findings"]}
+            self.assertEqual("auth-gateway", findings_by_id["AUTH-002"].get("component"))
+            self.assertEqual("admin", findings_by_id["DEPS-001"].get("component"))
+            self.assertEqual("api", findings_by_id["API-001"].get("component"))
+
+            md = rr.render(data)
+            self.assertIn("## Component risk ranking", md)
+            # auth-gateway has Critical (10), admin has High (5), api has Medium (2)
+            self.assertIn("Authentication Gateway (`auth-gateway`) — Risk Score: 10", md)
+            self.assertIn("Admin Portal (`admin`) — Risk Score: 5", md)
+            self.assertIn("API Service (`api`) — Risk Score: 2", md)
+            self.assertIn("### Architecture overview", md)
+            self.assertIn("```mermaid", md)
+
+    def test_copilot_review_edge_cases(self):
+        cc, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            # 1. Merge paths for auth-gateway (both api/src/core/security and api/src/auth)
+            (t / "api" / "src" / "core" / "security").mkdir(parents=True)
+            (t / "api" / "src" / "auth").mkdir(parents=True)
+            (t / "api" / "requirements.txt").write_text("fastapi==0.100.0\n")
+            (t / "api" / "src" / "main.py").write_text("# main")
+
+            # 2. Nested portals & shared frontend
+            (t / "frontend" / "src" / "app" / "admin").mkdir(parents=True)
+            (t / "frontend" / "package.json").write_text('{"dependencies": {"react": "^18.0"}}')
+
+            # 3. Ingress
+            (t / "Caddyfile").write_text(":8080\nreverse_proxy api:3000\n")
+
+            comps = cc.classify_components(t, "test-repo")
+            c_by_id = {c["id"]: c for c in comps}
+
+            # Verify auth-gateway merged both paths
+            self.assertIn("auth-gateway", c_by_id)
+            self.assertIn("api/src/core/security", c_by_id["auth-gateway"]["paths"])
+            self.assertIn("api/src/auth", c_by_id["auth-gateway"]["paths"])
+
+            # Verify api-src is NOT registered as a separate duplicate component
+            self.assertIn("api", c_by_id)
+            self.assertNotIn("api-src", c_by_id)
+
+            # Verify frontend is retained alongside admin-portal
+            self.assertIn("admin-portal", c_by_id)
+            self.assertIn("frontend", c_by_id)
+
+            # Verify attribution of shared frontend file vs nested admin file
+            f_shared = {"title": "Shared UI flaw", "evidence": [{"file": "frontend/package.json"}]}
+            f_admin = {"title": "Admin flaw", "evidence": [{"file": "frontend/src/app/admin/users.tsx"}]}
+            self.assertEqual("frontend", cc.attribute_finding_to_component(f_shared, comps))
+            self.assertEqual("admin-portal", cc.attribute_finding_to_component(f_admin, comps))
+
+            # Verify confirmed-fixed / seed findings with top-level file or cite attribute properly
+            fixed_auth = {"id": "AUTH-001", "file": "api/src/auth/token.py", "title": "Token flaw"}
+            fixed_cite = {"id": "AUTH-002", "cite": "api/src/core/security/keycloak.py:42", "title": "Keycloak flaw"}
+            self.assertEqual("auth-gateway", cc.attribute_finding_to_component(fixed_auth, comps))
+            self.assertEqual("auth-gateway", cc.attribute_finding_to_component(fixed_cite, comps))
+
+            # Verify Mermaid diagram retains ingress connections alongside frontends
+            diagram = cc.generate_mermaid_diagram(comps)
+            self.assertIn("node_web_server", diagram)
+            self.assertIn("node_api", diagram)
+            self.assertIn("node_frontend", diagram)
+
+        # 4. Root-level Django project mapping to '.'
+        with tempfile.TemporaryDirectory() as tmp2:
+            t2 = pathlib.Path(tmp2)
+            (t2 / "manage.py").write_text("# django")
+            (t2 / "myapp" / "views.py").parent.mkdir(parents=True)
+            (t2 / "myapp" / "views.py").write_text("# view")
+            comps2 = cc.classify_components(t2, "django-repo")
+            c_by_id2 = {c["id"]: c for c in comps2}
+            self.assertIn("django-app", c_by_id2)
+            self.assertIn(".", c_by_id2["django-app"]["paths"])
+
+            f_view = {"title": "View flaw", "evidence": [{"file": "myapp/views.py"}]}
+            self.assertEqual("django-app", cc.attribute_finding_to_component(f_view, comps2))
+
+
 if __name__ == "__main__":
     unittest.main()

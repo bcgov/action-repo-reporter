@@ -109,18 +109,35 @@ def render(data: dict) -> str:
         lines.append(f"| {cat} | {', '.join(ids) if ids else 'none'} |")
     lines.append("")
 
-    # Component risk ranking (simple heuristic)
+    # Component risk ranking using attributed finding severities
     lines.append("## Component risk ranking")
     lines.append("")
-    components = []
+    # Severities: Critical=10, High=5, Medium=2, Low=1
+    sev_weights = {"Critical": 10, "High": 5, "Medium": 2, "Low": 1}
+    raw_components = data.get("components") or []
+    comp_meta = {c["id"]: c for c in raw_components if isinstance(c, dict) and "id" in c}
+
+    comp_scores: dict[str, int] = Counter()
+    comp_findings: dict[str, list[str]] = {}
+
     for f in findings:
-        evs = f.get("evidence") or []
-        if evs and isinstance(evs[0], dict):
-            components.append(evs[0].get("file", "").split("/")[0] or evs[0].get("file"))
-    ranked = [c for c, _ in Counter(components).most_common(5) if c]
-    if ranked:
-        for i, c in enumerate(ranked, 1):
-            lines.append(f"{i}. `{c}`")
+        cid = f.get("component")
+        if not cid:
+            evs = f.get("evidence") or []
+            if evs and isinstance(evs[0], dict):
+                cid = evs[0].get("file", "").split("/")[0] or evs[0].get("file")
+            else:
+                cid = "root"
+        weight = sev_weights.get(f.get("severity"), 1)
+        comp_scores[cid] += weight
+        comp_findings.setdefault(cid, []).append(f.get("id"))
+
+    if comp_scores:
+        for i, (cid, score) in enumerate(comp_scores.most_common(10), 1):
+            c_info = comp_meta.get(cid)
+            label = f"{c_info['name']} (`{cid}`)" if c_info else f"`{cid}`"
+            f_list = comp_findings.get(cid, [])
+            lines.append(f"{i}. {label} — Risk Score: {score} ({len(f_list)} finding(s): {', '.join(f_list[:5])})")
     else:
         lines.append("1. (insufficient path diversity to rank)")
     lines.append("")
@@ -140,6 +157,8 @@ def render(data: dict) -> str:
         lines.append("")
 
     # Chapters
+    arch_info = data.get("architecture") or {}
+    mermaid_diag = arch_info.get("mermaid")
     by_id = {f["id"]: f for f in findings}
     for c in chapters:
         cid = c.get("id")
@@ -150,6 +169,21 @@ def render(data: dict) -> str:
         note = c.get("note") or ""
         lines.append(note)
         lines.append("")
+
+        if cid == "architecture":
+            lines.append("### Architecture overview")
+            lines.append("")
+            if mermaid_diag:
+                lines.append("```mermaid")
+                lines.append(mermaid_diag)
+                lines.append("```")
+                lines.append("")
+            if raw_components:
+                lines.append("Discovered components:")
+                for comp in raw_components:
+                    lines.append(f"- **{comp.get('name')}** (`{comp.get('id')}`, type: `{comp.get('type')}`): paths {comp.get('paths')}")
+                lines.append("")
+
         # Always leave substance beyond note+IDs/cites so the raised chapter gate passes
         # even for clean analyzed chapters (tooling/context sentence).
         lines.append(
