@@ -10,6 +10,7 @@ the public scans we already run.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import pathlib
 import re
@@ -17,6 +18,22 @@ import subprocess
 import sys
 from collections import defaultdict
 from typing import Any
+
+_classify_path = pathlib.Path(__file__).resolve().parent / "classify-components.py"
+if _classify_path.is_file():
+    _spec = importlib.util.spec_from_file_location("classify_components", _classify_path)
+    _cc = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_cc)
+    classify_components = _cc.classify_components
+    generate_mermaid_diagram = _cc.generate_mermaid_diagram
+    attribute_finding_to_component = _cc.attribute_finding_to_component
+else:
+    def classify_components(repo_dir: pathlib.Path, repo_name: str = "") -> list[dict[str, Any]]:
+        return []
+    def generate_mermaid_diagram(components: list[dict[str, Any]]) -> str:
+        return "graph TD\n    App[\"Application\"]"
+    def attribute_finding_to_component(finding: dict[str, Any], components: list[dict[str, Any]]) -> str:
+        return "root"
 
 CHAPTERS = (
     "architecture", "cicd", "zero-trust", "authn", "authz", "injection",
@@ -1023,6 +1040,20 @@ class Compiler:
         self.seed_auth_crypto()
         inventory = self.public_inventory()
         self.findings.sort(key=lambda f: (SEVERITY_RANK.get(f["severity"], 9), f["id"]))
+
+        # Classify components and attribute findings
+        components = classify_components(self.root, self.repo)
+        for f in self.findings:
+            f["component"] = attribute_finding_to_component(f, components)
+        for f in self.fixed:
+            f["component"] = attribute_finding_to_component(f, components)
+
+        mermaid_diag = generate_mermaid_diagram(components)
+        architecture = {
+            "mermaid": mermaid_diag,
+            "components": components,
+        }
+
         chapters = self.build_chapters(inventory)
         gaps, seen = [], set()
         for g in self.coverage_gaps:
@@ -1032,6 +1063,8 @@ class Compiler:
         return {
             "repository": self.repo,
             "commit": self.commit,
+            "components": components,
+            "architecture": architecture,
             "findings": self.findings,
             "fixed": self.fixed,
             "questions": self.questions,
