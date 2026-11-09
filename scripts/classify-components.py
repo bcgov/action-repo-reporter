@@ -26,12 +26,18 @@ def classify_components(repo_dir: pathlib.Path, repo_name: str = "") -> list[dic
     seen_ids: set[str] = set()
 
     def add_component(cid: str, name: str, ctype: str, paths: list[str], integrations: list[str]) -> None:
-        if cid in seen_ids:
-            return
         # Normalize and filter existing paths
-        valid_paths = [p for p in paths if (repo_dir / p).exists()]
+        valid_paths = [p for p in paths if p == "." or (repo_dir / p).exists()]
         if not valid_paths and paths:
             # If specified paths don't exist, don't register ghost component
+            return
+        if cid in seen_ids:
+            # Merge paths and integrations into existing component registration
+            for c in components:
+                if c["id"] == cid:
+                    c["paths"] = sorted(set(c["paths"] + valid_paths))
+                    c["integrations"] = sorted(set(c["integrations"] + integrations))
+                    break
             return
         seen_ids.add(cid)
         components.append({
@@ -64,10 +70,8 @@ def classify_components(repo_dir: pathlib.Path, repo_name: str = "") -> list[dic
         ("admin-portal", "Admin Portal", "frontend/src/app/admin"),
         ("public-portal", "Public Portal", "frontend/src/app/public"),
     ]
-    has_nested_portals = False
     for cid, name, path_str in nested_portals:
         if (repo_dir / path_str).is_dir():
-            has_nested_portals = True
             add_component(cid, name, "frontend", [path_str], ["api" if (repo_dir / "api").is_dir() else "backend"])
 
     # 3. Look for known portal / frontend directories
@@ -77,9 +81,6 @@ def classify_components(repo_dir: pathlib.Path, repo_name: str = "") -> list[dic
     for fed in candidate_fe_dirs:
         dir_path = repo_dir / fed
         if not dir_path.is_dir():
-            continue
-        # If nested portals were already extracted inside this frontend, don't re-add whole frontend as portal
-        if has_nested_portals and fed == "frontend":
             continue
 
         # Check if it has frontend indicators
@@ -108,6 +109,16 @@ def classify_components(repo_dir: pathlib.Path, repo_name: str = "") -> list[dic
         dir_path = repo_dir / apid
         if not dir_path.is_dir():
             continue
+
+        # Skip source-directory candidate when containing service was already classified,
+        # unless there is evidence of an independent service boundary
+        parent_candidate = str(pathlib.Path(apid).parent)
+        if parent_candidate != "." and any(c["id"] == parent_candidate.replace("/", "-") for c in components):
+            has_independent_pkg = (dir_path / "package.json").is_file() and not (repo_dir / parent_candidate / "package.json").is_file()
+            has_independent_req = (dir_path / "requirements.txt").is_file() and not (repo_dir / parent_candidate / "requirements.txt").is_file()
+            if not (has_independent_pkg or has_independent_req):
+                continue
+
         # Check if NestJS, Express, FastAPI, Django, Spring
         has_nest = (dir_path / "nest-cli.json").is_file() or any(dir_path.glob("**/nest-cli.json"))
         has_manage = (dir_path / "manage.py").is_file() or (repo_dir / "manage.py").is_file()
@@ -136,10 +147,11 @@ def classify_components(repo_dir: pathlib.Path, repo_name: str = "") -> list[dic
         parent_dir = str(pathlib.Path(manage_path).parent)
         cid = "django-app" if parent_dir == "." else f"{parent_dir.replace('/', '-')}-app"
         rctool = repo_dir / parent_dir / "rctool" if parent_dir != "." else repo_dir / "rctool"
-        paths = [parent_dir] if parent_dir != "." else [manage_path]
+        paths = [parent_dir]
         if rctool.is_dir():
             paths.append(str(rctool.relative_to(repo_dir)))
-        add_component(cid, "Rating Curve Web App", "api", paths, ["database", "ingress"])
+        name = "Django Web App" if cid == "django-app" else f"{cid.replace('-', ' ').title()}"
+        add_component(cid, name, "api", paths, ["database", "ingress"])
 
     # 6. Check for Auth Gateway / Core Security
     auth_paths = [
@@ -260,35 +272,87 @@ def generate_mermaid_diagram(components: list[dict[str, Any]]) -> str:
             lines.append(f"        {nid}[\"{c['name']}\"]")
         lines.append("    end")
 
-    # Default connections if no explicit integrations match
-    if frontends and apis:
-        for fe in frontends:
-            for api in apis:
-                lines.append(f"    {sanitize_id(fe['id'])} --> {sanitize_id(api['id'])}")
-    elif ingresses and apis:
-        for ing in ingresses:
-            for api in apis:
-                lines.append(f"    {sanitize_id(ing['id'])} --> {sanitize_id(api['id'])}")
+    comp_by_id = {c["id"]: c for c in components}
+    seen_edges: set[tuple[str, str]] = set()
 
-    if apis and auths:
-        for api in apis:
+    def add_edge(src_c: dict[str, Any], tgt_c: dict[str, Any], label: str = "") -> None:
+        src_nid = sanitize_id(src_c["id"])
+        tgt_nid = sanitize_id(tgt_c["id"])
+        if (src_nid, tgt_nid) in seen_edges or src_nid == tgt_nid:
+            return
+        seen_edges.add((src_nid, tgt_nid))
+        if tgt_c["type"] == "auth-gateway":
+            edge_syntax = f"-.->|{label or 'Authenticates with'}|"
+        elif tgt_c["type"] == "database":
+            edge_syntax = f"-->|{label or 'Persists to'}|"
+        elif tgt_c["type"] == "library":
+            edge_syntax = f"-.->|{label or 'Consumes'}|"
+        elif label:
+            edge_syntax = f"-->|{label}|"
+        else:
+            edge_syntax = "-->"
+        lines.append(f"    {src_nid} {edge_syntax} {tgt_nid}")
+
+    # 1. Resolve explicit recorded integrations first
+    for src in components:
+        for int_id in src.get("integrations", []):
+            if int_id in comp_by_id:
+                add_edge(src, comp_by_id[int_id])
+            else:
+                # Type or prefix match (e.g. "api", "backend", "database")
+                candidates = [c for c in components if c["type"] == int_id or c["id"] == int_id or c["id"].startswith(int_id)]
+                for tgt in candidates:
+                    add_edge(src, tgt)
+
+    # 2. Retain ingress connections alongside frontend connections
+    for ing in ingresses:
+        ing_nid = sanitize_id(ing["id"])
+        has_outbound = any(s == ing_nid for s, _ in seen_edges)
+        if not has_outbound:
+            if frontends:
+                for fe in frontends:
+                    add_edge(ing, fe, "Routes to")
+            if apis:
+                for api in apis:
+                    add_edge(ing, api, "Proxies to")
+
+    # 3. Frontend fallback connections
+    for fe in frontends:
+        fe_nid = sanitize_id(fe["id"])
+        if not any(s == fe_nid for s, _ in seen_edges) and apis:
+            for api in apis:
+                add_edge(fe, api)
+
+    # 4. APIs to Auth / Database fallback connections
+    for api in apis:
+        api_nid = sanitize_id(api["id"])
+        has_auth = any(s == api_nid and comp_by_id.get(t_id, {}).get("type") == "auth-gateway" for s, t in seen_edges for t_id in comp_by_id if sanitize_id(t_id) == t)
+        if not has_auth and auths:
             for auth in auths:
-                lines.append(f"    {sanitize_id(api['id'])} -.->|Authenticates with| {sanitize_id(auth['id'])}")
-
-    if apis and dbs:
-        for api in apis:
+                add_edge(api, auth, "Authenticates with")
+        has_db = any(s == api_nid and comp_by_id.get(t_id, {}).get("type") == "database" for s, t in seen_edges for t_id in comp_by_id if sanitize_id(t_id) == t)
+        if not has_db and dbs:
             for db in dbs:
-                lines.append(f"    {sanitize_id(api['id'])} -->|Persists to| {sanitize_id(db['id'])}")
+                add_edge(api, db, "Persists to")
 
-    if batches and dbs:
-        for b in batches:
-            for db in dbs:
-                lines.append(f"    {sanitize_id(b['id'])} -->|Reads/Writes| {sanitize_id(db['id'])}")
+    # 5. Batches fallback connections
+    for b in batches:
+        b_nid = sanitize_id(b["id"])
+        if not any(s == b_nid for s, _ in seen_edges):
+            if apis:
+                for api in apis:
+                    add_edge(b, api)
+            elif dbs:
+                for db in dbs:
+                    add_edge(b, db, "Reads/Writes")
 
-    if libs and (apis or frontends):
-        for l in libs:
-            target = apis[0] if apis else frontends[0]
-            lines.append(f"    {sanitize_id(target['id'])} -.->|Consumes| {sanitize_id(l['id'])}")
+    # 6. Shared library fallback connections
+    for l in libs:
+        l_nid = sanitize_id(l["id"])
+        if not any(t == l_nid for _, t in seen_edges):
+            target = apis[0] if apis else (frontends[0] if frontends else None)
+            if target:
+                add_edge(target, l, "Consumes")
 
     return "\n".join(lines)
 
@@ -296,12 +360,21 @@ def generate_mermaid_diagram(components: list[dict[str, Any]]) -> str:
 def attribute_finding_to_component(finding: dict[str, Any], components: list[dict[str, Any]]) -> str:
     """Attribute a finding to a component ID based on evidence file paths."""
     evidence = finding.get("evidence") or []
-    files = []
+    files: list[str] = []
     for ev in evidence:
         if isinstance(ev, dict) and ev.get("file"):
             files.append(ev["file"])
         elif isinstance(ev, str):
             files.append(ev)
+
+    # Accept the finding itself as citation evidence when evidence array is absent or empty
+    if not files:
+        if finding.get("file"):
+            files.append(str(finding["file"]))
+        elif finding.get("cite"):
+            cite_file = str(finding["cite"]).split(":")[0].strip()
+            if cite_file:
+                files.append(cite_file)
 
     if not files:
         title = finding.get("title", "")

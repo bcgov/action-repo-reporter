@@ -598,6 +598,71 @@ class ComponentTopologyTests(unittest.TestCase):
             self.assertIn("### Architecture overview", md)
             self.assertIn("```mermaid", md)
 
+    def test_copilot_review_edge_cases(self):
+        cc, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            # 1. Merge paths for auth-gateway (both api/src/core/security and api/src/auth)
+            (t / "api" / "src" / "core" / "security").mkdir(parents=True)
+            (t / "api" / "src" / "auth").mkdir(parents=True)
+            (t / "api" / "requirements.txt").write_text("fastapi==0.100.0\n")
+            (t / "api" / "src" / "main.py").write_text("# main")
+
+            # 2. Nested portals & shared frontend
+            (t / "frontend" / "src" / "app" / "admin").mkdir(parents=True)
+            (t / "frontend" / "package.json").write_text('{"dependencies": {"react": "^18.0"}}')
+
+            # 3. Ingress
+            (t / "Caddyfile").write_text(":8080\nreverse_proxy api:3000\n")
+
+            comps = cc.classify_components(t, "test-repo")
+            c_by_id = {c["id"]: c for c in comps}
+
+            # Verify auth-gateway merged both paths
+            self.assertIn("auth-gateway", c_by_id)
+            self.assertIn("api/src/core/security", c_by_id["auth-gateway"]["paths"])
+            self.assertIn("api/src/auth", c_by_id["auth-gateway"]["paths"])
+
+            # Verify api-src is NOT registered as a separate duplicate component
+            self.assertIn("api", c_by_id)
+            self.assertNotIn("api-src", c_by_id)
+
+            # Verify frontend is retained alongside admin-portal
+            self.assertIn("admin-portal", c_by_id)
+            self.assertIn("frontend", c_by_id)
+
+            # Verify attribution of shared frontend file vs nested admin file
+            f_shared = {"title": "Shared UI flaw", "evidence": [{"file": "frontend/package.json"}]}
+            f_admin = {"title": "Admin flaw", "evidence": [{"file": "frontend/src/app/admin/users.tsx"}]}
+            self.assertEqual("frontend", cc.attribute_finding_to_component(f_shared, comps))
+            self.assertEqual("admin-portal", cc.attribute_finding_to_component(f_admin, comps))
+
+            # Verify confirmed-fixed / seed findings with top-level file or cite attribute properly
+            fixed_auth = {"id": "AUTH-001", "file": "api/src/auth/token.py", "title": "Token flaw"}
+            fixed_cite = {"id": "AUTH-002", "cite": "api/src/core/security/keycloak.py:42", "title": "Keycloak flaw"}
+            self.assertEqual("auth-gateway", cc.attribute_finding_to_component(fixed_auth, comps))
+            self.assertEqual("auth-gateway", cc.attribute_finding_to_component(fixed_cite, comps))
+
+            # Verify Mermaid diagram retains ingress connections alongside frontends
+            diagram = cc.generate_mermaid_diagram(comps)
+            self.assertIn("node_web_server", diagram)
+            self.assertIn("node_api", diagram)
+            self.assertIn("node_frontend", diagram)
+
+        # 4. Root-level Django project mapping to '.'
+        with tempfile.TemporaryDirectory() as tmp2:
+            t2 = pathlib.Path(tmp2)
+            (t2 / "manage.py").write_text("# django")
+            (t2 / "myapp" / "views.py").parent.mkdir(parents=True)
+            (t2 / "myapp" / "views.py").write_text("# view")
+            comps2 = cc.classify_components(t2, "django-repo")
+            c_by_id2 = {c["id"]: c for c in comps2}
+            self.assertIn("django-app", c_by_id2)
+            self.assertIn(".", c_by_id2["django-app"]["paths"])
+
+            f_view = {"title": "View flaw", "evidence": [{"file": "myapp/views.py"}]}
+            self.assertEqual("django-app", cc.attribute_finding_to_component(f_view, comps2))
+
 
 if __name__ == "__main__":
     unittest.main()
