@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
+import re
 import sys
 
 
@@ -82,6 +84,16 @@ def render_dashboard(reports_dir: pathlib.Path) -> str:
         if cover_letter.is_file():
             cl_text = cover_letter.read_text().strip()
             if cl_text:
+                # Rewrite relative security-assessment.md link to absolute target report link in the repo
+                server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+                server_repo = os.environ.get("GITHUB_REPOSITORY", "bcgov/action-repo-reporter")
+                ref = os.environ.get("GITHUB_REF_NAME", "main")
+                report_url = f"{server_url}/{server_repo}/blob/{ref}/reports/{d.name}/security-assessment.md"
+                cl_text = re.sub(
+                    r"\[([^\]]+)\]\((?:\./)?security-assessment\.md\)",
+                    rf"[\1]({report_url})",
+                    cl_text,
+                )
                 lines.append(cl_text)
                 lines.append("")
 

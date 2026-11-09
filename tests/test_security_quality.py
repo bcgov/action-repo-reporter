@@ -386,17 +386,19 @@ class DashboardSummaryTests(unittest.TestCase):
                 "fixed": [{"id": "AUTH-001", "note": "RS256 pinned"}],
                 "coverage_gaps": ["No alerts API access"]
             }))
-            (target / "cover-letter.md").write_text("Executive cover letter text.")
+            (target / "cover-letter.md").write_text("Executive cover letter text with [security-assessment.md](security-assessment.md).")
 
             out = mod.render_dashboard(root)
             self.assertIn("# Multi-Repo Security Assessments Dashboard", out)
             self.assertIn("| [bcgov/nr-fom](https://github.com/bcgov/nr-fom) | **94** / 100 | 0 | 5 | 34 | 1 | 1 | 1 |", out)
             self.assertIn("<summary><strong>bcgov/nr-fom</strong> — Score: 94 / 100 (1 findings, 1 fixed)</summary>", out)
-            self.assertIn("Executive cover letter text.", out)
+            self.assertIn("Executive cover letter text with [security-assessment.md](https://github.com/bcgov/action-repo-reporter/blob/main/reports/nr-fom/security-assessment.md).", out)
             self.assertIn("**Confirmed Fixed:**", out)
             self.assertIn("- `AUTH-001`: RS256 pinned", out)
             self.assertIn("- **DEPS-001** [High]: joi", out)
             self.assertIn("- No alerts API access", out)
+            # Ensure file on disk was not mutated
+            self.assertEqual("Executive cover letter text with [security-assessment.md](security-assessment.md).", (target / "cover-letter.md").read_text())
 
 
 
