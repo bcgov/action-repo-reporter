@@ -1,0 +1,958 @@
+{
+  "repository": "bcgov/nr-hydrometric-rating-curve",
+  "commit": "a182f073533ff08b899db4903c4edab1a7d97fa8",
+  "findings": [
+    {
+      "id": "CICD-001",
+      "domain": "CICD",
+      "severity": "High",
+      "title": "Using variable interpolation `${{...}}` with `github` context data in a `run:` step could allow an attacker to inject their own code into the runner. This would",
+      "evidence": [
+        {
+          "file": ".github/workflows/.deployer.yml",
+          "line": 63,
+          "snippet": "run: |"
+        }
+      ],
+      "impact": "Using variable interpolation `${{...}}` with `github` context data in a `run:` step could allow an attacker to inject their own code into the runner. This would allow them to steal secrets and code. `github` context data can have arbitrary  CWE: CWE-78 OWASP: A03 Injection",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.run-shell-injection.run-shell-injection: https://docs.github.com/en/actions/learn-github-actions/security-hardening-for-github-actions#understanding-the-risk-of-script-injections",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-78"
+      ],
+      "owasp": [
+        "A03 Injection"
+      ]
+    },
+    {
+      "id": "INFRA-002",
+      "domain": "INFRA",
+      "severity": "High",
+      "title": "Root file system is not read-only",
+      "evidence": [
+        {
+          "file": "charts/app/templates/frontend/templates/deployment.yaml",
+          "line": 34,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-frontend' of Deployment 'nr-hydrometric-rating-curve-frontend' should set 'securityContext.readOnlyRootFilesystem' to true",
+      "recommendation": "Change 'containers[].securityContext.readOnlyRootFilesystem' to 'true'.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INFRA-009",
+      "domain": "INFRA",
+      "severity": "High",
+      "title": "Root file system is not read-only",
+      "evidence": [
+        {
+          "file": "charts/app/templates/rctool/templates/deployment.yaml",
+          "line": 38,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-rctool' of Deployment 'nr-hydrometric-rating-curve-rctool' should set 'securityContext.readOnlyRootFilesystem' to true",
+      "recommendation": "Change 'containers[].securityContext.readOnlyRootFilesystem' to 'true'.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "CICD-002",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/.deployer.yml",
+          "line": 108,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-003",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 28,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-004",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 44,
+          "snippet": "uses: github/codeql-action/upload-sarif@v4"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-005",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 52,
+          "snippet": "uses: github/codeql-action/upload-sarif@v4"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-006",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 99,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-007",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 101,
+          "snippet": "uses: actions/setup-python@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-008",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 114,
+          "snippet": "uses: actions/upload-artifact@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-009",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 142,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-010",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 144,
+          "snippet": "uses: actions/setup-python@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-011",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 157,
+          "snippet": "uses: actions/cache@v6"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-012",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/merge.yml",
+          "line": 31,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-013",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/release.yml",
+          "line": 25,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "INFRA-006",
+      "domain": "INFRA",
+      "severity": "Medium",
+      "title": "Specific capabilities added",
+      "evidence": [
+        {
+          "file": "charts/app/templates/frontend/templates/deployment.yaml",
+          "line": 34,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-frontend' of Deployment 'nr-hydrometric-rating-curve-frontend' should not set 'securityContext.capabilities.add'",
+      "recommendation": "Do not set spec.containers[*].securityContext.capabilities.add and spec.initContainers[*].securityContext.capabilities.add.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INFRA-007",
+      "domain": "INFRA",
+      "severity": "Medium",
+      "title": "Restrict container images to trusted registries",
+      "evidence": [
+        {
+          "file": "charts/app/templates/frontend/templates/deployment.yaml",
+          "line": 34,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container nr-hydrometric-rating-curve-frontend in deployment nr-hydrometric-rating-curve-frontend (namespace: null) uses an image from an untrusted registry.",
+      "recommendation": "Use images from trusted registries.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INFRA-013",
+      "domain": "INFRA",
+      "severity": "Medium",
+      "title": "Specific capabilities added",
+      "evidence": [
+        {
+          "file": "charts/app/templates/rctool/templates/deployment.yaml",
+          "line": 38,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-rctool' of Deployment 'nr-hydrometric-rating-curve-rctool' should not set 'securityContext.capabilities.add'",
+      "recommendation": "Do not set spec.containers[*].securityContext.capabilities.add and spec.initContainers[*].securityContext.capabilities.add.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INFRA-014",
+      "domain": "INFRA",
+      "severity": "Medium",
+      "title": "Restrict container images to trusted registries",
+      "evidence": [
+        {
+          "file": "charts/app/templates/rctool/templates/deployment.yaml",
+          "line": 38,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container nr-hydrometric-rating-curve-rctool in deployment nr-hydrometric-rating-curve-rctool (namespace: null) uses an image from an untrusted registry.",
+      "recommendation": "Use images from trusted registries.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INJ-001",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "Manually-created forms in django templates should specify a csrf_token to prevent CSRF attacks.",
+      "evidence": [
+        {
+          "file": "frontend/rctool/templates/rctool/rctool/develop/rctool_develop.html",
+          "line": 165,
+          "snippet": "[redacted: possible credential]"
+        }
+      ],
+      "impact": "Manually-created forms in django templates should specify a csrf_token to prevent CSRF attacks. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for python.django.security.django-no-csrf-token.django-no-csrf-token: https://docs.djangoproject.com/en/4.2/howto/csrf/",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "INJ-002",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "Detected direct use of jinja2. If not done properly, this may bypass HTML escaping which opens up the application to cross-site scripting (XSS) vulnerabilities.",
+      "evidence": [
+        {
+          "file": "frontend/rctool/utils.py",
+          "line": 22,
+          "snippet": "html  = template.render(context_dict)"
+        }
+      ],
+      "impact": "Detected direct use of jinja2. If not done properly, this may bypass HTML escaping which opens up the application to cross-site scripting (XSS) vulnerabilities. Prefer using the Flask method 'render_template()' and templates with a '.html'  CWE: CWE-79 OWASP: A03 Injection",
+      "recommendation": "Follow Semgrep rule guidance for python.flask.security.xss.audit.direct-use-of-jinja2.direct-use-of-jinja2: https://jinja.palletsprojects.com/en/2.11.x/api/#basics",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-79"
+      ],
+      "owasp": [
+        "A03 Injection"
+      ]
+    },
+    {
+      "id": "INJ-003",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "Detected direct use of jinja2. If not done properly, this may bypass HTML escaping which opens up the application to cross-site scripting (XSS) vulnerabilities.",
+      "evidence": [
+        {
+          "file": "frontend/rctool/views.py",
+          "line": 1152,
+          "snippet": "html = template.render(context)"
+        }
+      ],
+      "impact": "Detected direct use of jinja2. If not done properly, this may bypass HTML escaping which opens up the application to cross-site scripting (XSS) vulnerabilities. Prefer using the Flask method 'render_template()' and templates with a '.html'  CWE: CWE-79 OWASP: A03 Injection",
+      "recommendation": "Follow Semgrep rule guidance for python.flask.security.xss.audit.direct-use-of-jinja2.direct-use-of-jinja2: https://jinja.palletsprojects.com/en/2.11.x/api/#basics",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-79"
+      ],
+      "owasp": [
+        "A03 Injection"
+      ]
+    },
+    {
+      "id": "INJ-004",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "Possibility of prototype polluting function detected. By adding or modifying attributes of an object prototype, it is possible to create attributes that exist o",
+      "evidence": [
+        {
+          "file": "frontend/static/js/chart.umd.js",
+          "line": 13,
+          "snippet": "*/function _t(t){return t+.5|0}const yt=(t,e,i)=>Math.max(Math.min(t,i),e);function vt(t){return yt(_t(2.55*t),0,255)}function Mt(t){return yt(_t(255*t),0,255)}function wt(t){return yt(_t(t/2.55)/100,"
+        }
+      ],
+      "impact": "Possibility of prototype polluting function detected. By adding or modifying attributes of an object prototype, it is possible to create attributes that exist on every object, or replace critical attributes with malicious ones. This can be  CWE: CWE-915",
+      "recommendation": "Follow Semgrep rule guidance for javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop: https://github.com/HoLyVieR/prototype-pollution-nsec18/blob/master/paper/JavaScript_prototype_pollution_attack_in_NodeJS.pdf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-915"
+      ]
+    },
+    {
+      "id": "INFRA-001",
+      "domain": "INFRA",
+      "severity": "Low",
+      "title": "CPU not limited",
+      "evidence": [
+        {
+          "file": "charts/app/templates/frontend/templates/deployment.yaml",
+          "line": 34,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-frontend' of Deployment 'nr-hydrometric-rating-curve-frontend' should set 'resources.limits.cpu'",
+      "recommendation": "Set a limit value under 'containers[].resources.limits.cpu'.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INFRA-003",
+      "domain": "INFRA",
+      "severity": "Low",
+      "title": "Memory not limited",
+      "evidence": [
+        {
+          "file": "charts/app/templates/frontend/templates/deployment.yaml",
+          "line": 34,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-frontend' of Deployment 'nr-hydrometric-rating-curve-frontend' should set 'resources.limits.memory'",
+      "recommendation": "Set a limit value under 'containers[].resources.limits.memory'.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INFRA-004",
+      "domain": "INFRA",
+      "severity": "Low",
+      "title": "Runs with UID <= 10000",
+      "evidence": [
+        {
+          "file": "charts/app/templates/frontend/templates/deployment.yaml",
+          "line": 34,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-frontend' of Deployment 'nr-hydrometric-rating-curve-frontend' should set 'securityContext.runAsUser' > 10000",
+      "recommendation": "Set 'containers[].securityContext.runAsUser' to an integer > 10000.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INFRA-005",
+      "domain": "INFRA",
+      "severity": "Low",
+      "title": "Runs with GID <= 10000",
+      "evidence": [
+        {
+          "file": "charts/app/templates/frontend/templates/deployment.yaml",
+          "line": 34,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-frontend' of Deployment 'nr-hydrometric-rating-curve-frontend' should set 'securityContext.runAsGroup' > 10000",
+      "recommendation": "Set 'containers[].securityContext.runAsGroup' to an integer > 10000.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INFRA-008",
+      "domain": "INFRA",
+      "severity": "Low",
+      "title": "CPU not limited",
+      "evidence": [
+        {
+          "file": "charts/app/templates/rctool/templates/deployment.yaml",
+          "line": 38,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-rctool' of Deployment 'nr-hydrometric-rating-curve-rctool' should set 'resources.limits.cpu'",
+      "recommendation": "Set a limit value under 'containers[].resources.limits.cpu'.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INFRA-010",
+      "domain": "INFRA",
+      "severity": "Low",
+      "title": "Memory not limited",
+      "evidence": [
+        {
+          "file": "charts/app/templates/rctool/templates/deployment.yaml",
+          "line": 38,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-rctool' of Deployment 'nr-hydrometric-rating-curve-rctool' should set 'resources.limits.memory'",
+      "recommendation": "Set a limit value under 'containers[].resources.limits.memory'.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INFRA-011",
+      "domain": "INFRA",
+      "severity": "Low",
+      "title": "Runs with UID <= 10000",
+      "evidence": [
+        {
+          "file": "charts/app/templates/rctool/templates/deployment.yaml",
+          "line": 38,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-rctool' of Deployment 'nr-hydrometric-rating-curve-rctool' should set 'securityContext.runAsUser' > 10000",
+      "recommendation": "Set 'containers[].securityContext.runAsUser' to an integer > 10000.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    },
+    {
+      "id": "INFRA-012",
+      "domain": "INFRA",
+      "severity": "Low",
+      "title": "Runs with GID <= 10000",
+      "evidence": [
+        {
+          "file": "charts/app/templates/rctool/templates/deployment.yaml",
+          "line": 38,
+          "snippet": "{{- end }}"
+        }
+      ],
+      "impact": "Container 'nr-hydrometric-rating-curve-rctool' of Deployment 'nr-hydrometric-rating-curve-rctool' should set 'securityContext.runAsGroup' > 10000",
+      "recommendation": "Set 'containers[].securityContext.runAsGroup' to an integer > 10000.",
+      "source": "trivy",
+      "cwe": [
+        "CWE-16"
+      ],
+      "owasp": [
+        "A05 Security Misconfiguration"
+      ]
+    }
+  ],
+  "fixed": [],
+  "questions": [],
+  "coverage_gaps": [
+    "GitHub's own alert list was not read (dependabot: HTTP 403 or unavailable). Public scanner proxy used instead.",
+    "GitHub's own alert list was not read (code-scanning: HTTP 403 or unavailable). Public scanner proxy used instead.",
+    "GitHub's own alert list was not read (secret-scanning: HTTP 403 or unavailable). Public scanner proxy used instead."
+  ],
+  "chapters": [
+    {
+      "id": "architecture",
+      "status": "analyzed",
+      "note": "Public clone layout reviewed via README.md; monorepo/components inferred from manifests.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "cicd",
+      "status": "analyzed",
+      "note": "Reviewed 10 GitHub workflow file(s) under .github/workflows; 13 supply-chain/workflow finding(s) from scanners.",
+      "finding_ids": [
+        "CICD-001",
+        "CICD-002",
+        "CICD-003",
+        "CICD-004",
+        "CICD-005",
+        "CICD-006",
+        "CICD-007",
+        "CICD-008",
+        "CICD-009",
+        "CICD-010",
+        "CICD-011",
+        "CICD-012",
+        "CICD-013"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "zero-trust",
+      "status": "analyzed",
+      "note": "Mapped 8 Critical/High/Medium finding(s) to Verify Explicitly / Least Privilege / Assume Breach themes from scanner output.",
+      "finding_ids": [
+        "CICD-001",
+        "INFRA-002",
+        "INFRA-009",
+        "CICD-002",
+        "CICD-003",
+        "CICD-004",
+        "CICD-005",
+        "CICD-006"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "authn",
+      "status": "analyzed",
+      "note": "Authentication file checks and scanner hits: 0 open, 0 confirmed-fixed (AUTH seeds when target is nr-fom).",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "authz",
+      "status": "not_assessed",
+      "note": "No NestJS @UseGuards/@Roles/CanActivate patterns found for automated authz rules.",
+      "finding_ids": [],
+      "evidence": []
+    },
+    {
+      "id": "injection",
+      "status": "analyzed",
+      "note": "Semgrep 1.184.0 ran with 17 result(s). scanned 124 path(s). 4 injection-domain finding(s) promoted.",
+      "finding_ids": [
+        "INJ-001",
+        "INJ-002",
+        "INJ-003",
+        "INJ-004"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "configuration",
+      "status": "analyzed",
+      "note": "Configuration findings from scanners: 0. Public manifests reviewed for CORS/debug/TLS defaults where cited.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "cryptography",
+      "status": "analyzed",
+      "note": "Cryptography file checks and scanner hits: 0 open, 0 confirmed-fixed.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "secrets",
+      "status": "analyzed",
+      "note": "gitleaks gitleaks ran with 0 result(s). clean scan. 0 secret finding(s) promoted.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "logging-data",
+      "status": "analyzed",
+      "note": "Logging/PII scanner hits: 0. This pass uses automated rules only, not a full DATA audit.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "code-scanning",
+      "status": "analyzed",
+      "note": "Semgrep 1.184.0 ran with 17 result(s). scanned 124 path(s). Public proxy for GitHub code-scanning until #96. GitHub's own alert list was not read (403/unavailable).",
+      "finding_ids": [
+        "CICD-001",
+        "CICD-002",
+        "CICD-003",
+        "CICD-004",
+        "CICD-005",
+        "CICD-006",
+        "CICD-007",
+        "CICD-008",
+        "CICD-009",
+        "CICD-010",
+        "CICD-011",
+        "CICD-012",
+        "CICD-013",
+        "INJ-001",
+        "INJ-002",
+        "INJ-003",
+        "INJ-004"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "secret-scanning",
+      "status": "analyzed",
+      "note": "gitleaks gitleaks ran with 0 result(s). clean scan. Public proxy for GitHub secret-scanning until #96. GitHub's own alert list was not read (403/unavailable).",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "dependabot",
+      "status": "analyzed",
+      "note": "osv-scanner osv-scanner ran with 0 result(s). 0 advisory hit(s). Trivy 0.76.1 ran with 14 result(s). 0 vuln(s), 14 misconfig(s). Public proxy for Dependabot until #96. GitHub's own alert list was not read (403/unavailable).",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "dependencies",
+      "status": "analyzed",
+      "note": "osv-scanner osv-scanner ran with 0 result(s). 0 advisory hit(s). Trivy 0.76.1 ran with 14 result(s). 0 vuln(s), 14 misconfig(s). 0 dependency finding(s) promoted after dedupe.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "containers-iac",
+      "status": "analyzed",
+      "note": "Trivy 0.76.1 ran with 14 result(s). 0 vuln(s), 14 misconfig(s). 14 IaC/container finding(s).",
+      "finding_ids": [
+        "INFRA-002",
+        "INFRA-009",
+        "INFRA-006",
+        "INFRA-007",
+        "INFRA-013",
+        "INFRA-014",
+        "INFRA-001",
+        "INFRA-003",
+        "INFRA-004",
+        "INFRA-005",
+        "INFRA-008",
+        "INFRA-010",
+        "INFRA-011",
+        "INFRA-012"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "testing",
+      "status": "analyzed",
+      "note": "Found 9 test file(s) matching common unit/e2e patterns in the public clone.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "frontend/rctool/tests/test_legacy.py",
+          "line": 1
+        },
+        {
+          "file": "frontend/rctool/tests/test_forms.py",
+          "line": 1
+        },
+        {
+          "file": "frontend/rctool/tests/test_views_helpers.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "stack",
+      "status": "analyzed",
+      "note": "Stack from public manifests: engines=n/a; renovate=yes; 10 workflow file(s).",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "renovate.json",
+          "line": 1
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "semgrep": {
+      "ok": true,
+      "version": "1.184.0",
+      "count": 17,
+      "detail": "scanned 124 path(s)"
+    },
+    "gitleaks": {
+      "ok": true,
+      "version": "gitleaks",
+      "count": 0,
+      "detail": "clean scan"
+    },
+    "osv-scanner": {
+      "ok": true,
+      "version": "osv-scanner",
+      "count": 0,
+      "detail": "0 advisory hit(s)"
+    },
+    "trivy": {
+      "ok": true,
+      "version": "0.76.1",
+      "count": 14,
+      "detail": "0 vuln(s), 14 misconfig(s)"
+    },
+    "dependabot": {
+      "ok": false,
+      "version": "unknown",
+      "count": 0,
+      "detail": "WARN: dependabot unavailable: gh: Resource not accessible by integration (HTTP 403)"
+    },
+    "code-scanning": {
+      "ok": false,
+      "version": "unknown",
+      "count": 0,
+      "detail": "WARN: code-scanning unavailable: gh: Resource not accessible by integration (HTTP 403)"
+    },
+    "secret-scanning": {
+      "ok": false,
+      "version": "unknown",
+      "count": 0,
+      "detail": "WARN: secret-scanning-raw unavailable: gh: Resource not accessible by integration (HTTP 403)"
+    }
+  },
+  "generator": "scripts/compile-findings.py"
+}

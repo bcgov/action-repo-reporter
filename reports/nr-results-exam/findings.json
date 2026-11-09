@@ -1,0 +1,1135 @@
+{
+  "repository": "bcgov/nr-results-exam",
+  "commit": "2b7c3fb9ee8ef913906386a576c3516c9b89097b",
+  "findings": [
+    {
+      "id": "INJ-011",
+      "domain": "INJ",
+      "severity": "High",
+      "title": "Detected calls to child_process from a function argument `cmd`. This could lead to a command injection if the input is user controllable. Try to avoid calls to ",
+      "evidence": [
+        {
+          "file": "scripts/generate-security-report.js",
+          "line": 37,
+          "snippet": "return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();"
+        }
+      ],
+      "impact": "Detected calls to child_process from a function argument `cmd`. This could lead to a command injection if the input is user controllable. Try to avoid calls to child_process, and if it is needed ensure user input is correctly sanitized or s CWE: CWE-78 OWASP: A03 Injection",
+      "recommendation": "Follow Semgrep rule guidance for javascript.lang.security.detect-child-process.detect-child-process: https://cheatsheetseries.owasp.org/cheatsheets/Nodejs_Security_Cheat_Sheet.html#do-not-use-dangerous-functions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-78"
+      ],
+      "owasp": [
+        "A03 Injection"
+      ]
+    },
+    {
+      "id": "CICD-001",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/.deploy.yml",
+          "line": 97,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-002",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/.deploy.yml",
+          "line": 98,
+          "snippet": "- uses: actions/setup-node@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-003",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 28,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-004",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 29,
+          "snippet": "- uses: github/codeql-action/init@v4"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-005",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 34,
+          "snippet": "uses: github/codeql-action/analyze@v4"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-006",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 47,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-007",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 62,
+          "snippet": "uses: github/codeql-action/upload-sarif@v4"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-008",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/analysis.yml",
+          "line": 70,
+          "snippet": "uses: github/codeql-action/upload-sarif@v4"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-009",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/merge.yml",
+          "line": 27,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-010",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/merge.yml",
+          "line": 106,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-011",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/reporting.yml",
+          "line": 26,
+          "snippet": "uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-012",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/reporting.yml",
+          "line": 94,
+          "snippet": "uses: github/codeql-action/upload-sarif@v4"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-013",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/reporting.yml",
+          "line": 124,
+          "snippet": "uses: github/codeql-action/upload-sarif@v4"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-014",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/reporting.yml",
+          "line": 172,
+          "snippet": "uses: actions/upload-artifact@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-015",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/reporting.yml",
+          "line": 225,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "DEPS-001",
+      "domain": "DEPS",
+      "severity": "Medium",
+      "title": "glob 13.0.7 affected by GHSA-3g3m-2fjr-6pw4",
+      "evidence": [
+        {
+          "file": "backend/package-lock.json",
+          "line": 1856,
+          "snippet": "\"node_modules/glob\": {"
+        }
+      ],
+      "impact": "Glob: AbortSignal cancellation bypass allows post-timeout filesystem traversal CWE: CWE-400 Aliases: CVE-2026-118773.",
+      "recommendation": "Upgrade glob from 13.0.7 to a patched release per GHSA-3g3m-2fjr-6pw4.",
+      "source": "osv-scanner",
+      "cwe": [
+        "CWE-400"
+      ]
+    },
+    {
+      "id": "DEPS-002",
+      "domain": "DEPS",
+      "severity": "Medium",
+      "title": "minimatch 10.2.6 affected by GHSA-g3hv-75wg-m249",
+      "evidence": [
+        {
+          "file": "backend/package-lock.json",
+          "line": 2497,
+          "snippet": "\"node_modules/minimatch\": {"
+        }
+      ],
+      "impact": "minimatch has potential denial of service via globparts amplification CWE: CWE-405 Aliases: CVE-2026-118764.",
+      "recommendation": "Upgrade minimatch from 10.2.6 to a patched release per GHSA-g3hv-75wg-m249.",
+      "source": "osv-scanner",
+      "cwe": [
+        "CWE-405"
+      ]
+    },
+    {
+      "id": "DEPS-003",
+      "domain": "DEPS",
+      "severity": "Medium",
+      "title": "stream-json 1.9.1 affected by GHSA-528h-pc64-c93x",
+      "evidence": [
+        {
+          "file": "backend/package-lock.json",
+          "line": 3316,
+          "snippet": "\"node_modules/stream-json\": {"
+        }
+      ],
+      "impact": "stream-json: pick/ignore/filter/replace filters are O(depth\u00b2) on nested input \u2014 small crafted JSON blocks the event loop for seconds\u2192minutes (DoS) CWE: CWE-407 Aliases: CVE-2026-71429.",
+      "recommendation": "Upgrade stream-json from 1.9.1 to a patched release per GHSA-528h-pc64-c93x.",
+      "source": "osv-scanner",
+      "cwe": [
+        "CWE-407"
+      ]
+    },
+    {
+      "id": "DEPS-004",
+      "domain": "DEPS",
+      "severity": "Medium",
+      "title": "stream-json 1.9.1 affected by GHSA-hqr4-qq8f-hg3x",
+      "evidence": [
+        {
+          "file": "backend/package-lock.json",
+          "line": 3316,
+          "snippet": "\"node_modules/stream-json\": {"
+        }
+      ],
+      "impact": "stream-json: JSONC parser and verifier re-scan the whole accumulated comment on every input chunk CWE: CWE-407 Aliases: CVE-2026-104182.",
+      "recommendation": "Upgrade stream-json from 1.9.1 to a patched release per GHSA-hqr4-qq8f-hg3x.",
+      "source": "osv-scanner",
+      "cwe": [
+        "CWE-407"
+      ]
+    },
+    {
+      "id": "DEPS-005",
+      "domain": "DEPS",
+      "severity": "Medium",
+      "title": "stream-json 1.9.1 affected by GHSA-mjw6-4jj6-33hc",
+      "evidence": [
+        {
+          "file": "backend/package-lock.json",
+          "line": 3316,
+          "snippet": "\"node_modules/stream-json\": {"
+        }
+      ],
+      "impact": "stream-json has a prototype pollution issue: Assembler writes this.current[this.key] on plain objects CWE: CWE-1321 Aliases: CVE-2026-104183.",
+      "recommendation": "Upgrade stream-json from 1.9.1 to a patched release per GHSA-mjw6-4jj6-33hc.",
+      "source": "osv-scanner",
+      "cwe": [
+        "CWE-1321"
+      ],
+      "owasp": [
+        "A08 Software and Data Integrity Failures"
+      ]
+    },
+    {
+      "id": "DEPS-006",
+      "domain": "DEPS",
+      "severity": "Medium",
+      "title": "minimatch 10.2.6 affected by GHSA-g3hv-75wg-m249",
+      "evidence": [
+        {
+          "file": "frontend/package-lock.json",
+          "line": 4319,
+          "snippet": "\"node_modules/minimatch\": {"
+        }
+      ],
+      "impact": "minimatch has potential denial of service via globparts amplification CWE: CWE-405 Aliases: CVE-2026-118764.",
+      "recommendation": "Upgrade minimatch from 10.2.6 to a patched release per GHSA-g3hv-75wg-m249.",
+      "source": "osv-scanner",
+      "cwe": [
+        "CWE-405"
+      ]
+    },
+    {
+      "id": "INFRA-002",
+      "domain": "INFRA",
+      "severity": "Medium",
+      "title": "In Kubernetes, each pod runs in its own isolated environment with its own set of security policies. However, certain container images may contain `setuid` or `s",
+      "evidence": [
+        {
+          "file": "backend/openshift.deploy.yml",
+          "line": 92,
+          "snippet": "name: \"${NAME}\""
+        }
+      ],
+      "impact": "In Kubernetes, each pod runs in its own isolated environment with its own set of security policies. However, certain container images may contain `setuid` or `setgid` binaries that could allow an attacker to perform privilege escalation and CWE: CWE-732",
+      "recommendation": "Follow Semgrep rule guidance for yaml.kubernetes.security.allow-privilege-escalation-no-securitycontext.allow-privilege-escalation-no-securitycontext: https://kubernetes.io/docs/concepts/policy/pod-security-policy/#privilege-escalation",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-732"
+      ]
+    },
+    {
+      "id": "INFRA-004",
+      "domain": "INFRA",
+      "severity": "Medium",
+      "title": "In Kubernetes, each pod runs in its own isolated environment with its own set of security policies. However, certain container images may contain `setuid` or `s",
+      "evidence": [
+        {
+          "file": "frontend/openshift.deploy.yml",
+          "line": 79,
+          "snippet": "securityContext:"
+        }
+      ],
+      "impact": "In Kubernetes, each pod runs in its own isolated environment with its own set of security policies. However, certain container images may contain `setuid` or `setgid` binaries that could allow an attacker to perform privilege escalation and CWE: CWE-732",
+      "recommendation": "Follow Semgrep rule guidance for yaml.kubernetes.security.allow-privilege-escalation.allow-privilege-escalation: https://kubernetes.io/docs/concepts/policy/pod-security-policy/#privilege-escalation",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-732"
+      ]
+    },
+    {
+      "id": "INJ-009",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for",
+      "evidence": [
+        {
+          "file": "scripts/dashboard-template.html",
+          "line": 12,
+          "snippet": "<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css\">"
+        }
+      ],
+      "impact": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for example from a CDN) are delivered without unexpected manipulation. Without this CWE: CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for html.security.audit.missing-integrity.missing-integrity: https://owasp.org/Top10/A08_2021-Software_and_Data_Integrity_Failures",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "INJ-010",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for",
+      "evidence": [
+        {
+          "file": "scripts/dashboard-template.html",
+          "line": 15,
+          "snippet": "<script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>"
+        }
+      ],
+      "impact": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for example from a CDN) are delivered without unexpected manipulation. Without this CWE: CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for html.security.audit.missing-integrity.missing-integrity: https://owasp.org/Top10/A08_2021-Software_and_Data_Integrity_Failures",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "INJ-012",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "`backendCoverage.replace` method will only replace the first occurrence when used with a string argument ('%'). If this method is used for escaping of dangerous",
+      "evidence": [
+        {
+          "file": "scripts/generate-security-report.js",
+          "line": 416,
+          "snippet": "backendCoverage: backendCoverage.replace('%', ''),"
+        }
+      ],
+      "impact": "`backendCoverage.replace` method will only replace the first occurrence when used with a string argument ('%'). If this method is used for escaping of dangerous data then there is a possibility for a bypass. Try to use sanitization library  CWE: CWE-116",
+      "recommendation": "Follow Semgrep rule guidance for javascript.lang.security.audit.incomplete-sanitization.incomplete-sanitization: https://owasp.org/Top10/A03_2021-Injection",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-116"
+      ]
+    },
+    {
+      "id": "INJ-013",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "`frontendCoverage.replace` method will only replace the first occurrence when used with a string argument ('%'). If this method is used for escaping of dangerou",
+      "evidence": [
+        {
+          "file": "scripts/generate-security-report.js",
+          "line": 417,
+          "snippet": "frontendCoverage: frontendCoverage.replace('%', ''),"
+        }
+      ],
+      "impact": "`frontendCoverage.replace` method will only replace the first occurrence when used with a string argument ('%'). If this method is used for escaping of dangerous data then there is a possibility for a bypass. Try to use sanitization library CWE: CWE-116",
+      "recommendation": "Follow Semgrep rule guidance for javascript.lang.security.audit.incomplete-sanitization.incomplete-sanitization: https://owasp.org/Top10/A03_2021-Injection",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-116"
+      ]
+    },
+    {
+      "id": "AUTH-001",
+      "domain": "AUTH",
+      "severity": "Low",
+      "title": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are p",
+      "evidence": [
+        {
+          "file": "backend/__tests__/authMiddleware.test.js",
+          "line": 44,
+          "snippet": "const app = express();"
+        }
+      ],
+      "impact": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your routes with a token or cookies. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage: https://www.npmjs.com/package/csurf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "AUTH-002",
+      "domain": "AUTH",
+      "severity": "Low",
+      "title": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are p",
+      "evidence": [
+        {
+          "file": "backend/__tests__/authMiddleware.test.js",
+          "line": 116,
+          "snippet": "const app = express();"
+        }
+      ],
+      "impact": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your routes with a token or cookies. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage: https://www.npmjs.com/package/csurf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "CONFIG-001",
+      "domain": "CONFIG",
+      "severity": "Low",
+      "title": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are p",
+      "evidence": [
+        {
+          "file": "backend/__tests__/cors.test.js",
+          "line": 9,
+          "snippet": "const app = express();"
+        }
+      ],
+      "impact": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your routes with a token or cookies. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage: https://www.npmjs.com/package/csurf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "INFRA-001",
+      "domain": "INFRA",
+      "severity": "Low",
+      "title": "When running containers in Kubernetes, it's important to ensure that they  are properly secured to prevent privilege escalation attacks.  One potential vulnerab",
+      "evidence": [
+        {
+          "file": "backend/openshift.deploy.yml",
+          "line": 88,
+          "snippet": "spec:"
+        }
+      ],
+      "impact": "When running containers in Kubernetes, it's important to ensure that they  are properly secured to prevent privilege escalation attacks.  One potential vulnerability is when a container is allowed to run  applications as the root user, whic CWE: CWE-250",
+      "recommendation": "Follow Semgrep rule guidance for yaml.kubernetes.security.run-as-non-root.run-as-non-root: https://kubernetes.io/blog/2016/08/security-best-practices-kubernetes-deployment/",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-250"
+      ]
+    },
+    {
+      "id": "INFRA-003",
+      "domain": "INFRA",
+      "severity": "Low",
+      "title": "When running containers in Kubernetes, it's important to ensure that they  are properly secured to prevent privilege escalation attacks.  One potential vulnerab",
+      "evidence": [
+        {
+          "file": "frontend/openshift.deploy.yml",
+          "line": 76,
+          "snippet": "spec:"
+        }
+      ],
+      "impact": "When running containers in Kubernetes, it's important to ensure that they  are properly secured to prevent privilege escalation attacks.  One potential vulnerability is when a container is allowed to run  applications as the root user, whic CWE: CWE-250",
+      "recommendation": "Follow Semgrep rule guidance for yaml.kubernetes.security.run-as-non-root.run-as-non-root: https://kubernetes.io/blog/2016/08/security-best-practices-kubernetes-deployment/",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-250"
+      ]
+    },
+    {
+      "id": "INJ-001",
+      "domain": "INJ",
+      "severity": "Low",
+      "title": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are p",
+      "evidence": [
+        {
+          "file": "backend/__tests__/health.test.js",
+          "line": 12,
+          "snippet": "const app = express();"
+        }
+      ],
+      "impact": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your routes with a token or cookies. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage: https://www.npmjs.com/package/csurf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "INJ-002",
+      "domain": "INJ",
+      "severity": "Low",
+      "title": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are p",
+      "evidence": [
+        {
+          "file": "backend/__tests__/health.test.js",
+          "line": 41,
+          "snippet": "const app = express();"
+        }
+      ],
+      "impact": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your routes with a token or cookies. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage: https://www.npmjs.com/package/csurf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "INJ-003",
+      "domain": "INJ",
+      "severity": "Low",
+      "title": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are p",
+      "evidence": [
+        {
+          "file": "backend/__tests__/health.test.js",
+          "line": 63,
+          "snippet": "const app = express();"
+        }
+      ],
+      "impact": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your routes with a token or cookies. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage: https://www.npmjs.com/package/csurf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "INJ-004",
+      "domain": "INJ",
+      "severity": "Low",
+      "title": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are p",
+      "evidence": [
+        {
+          "file": "backend/__tests__/index.test.js",
+          "line": 11,
+          "snippet": "const app = express();"
+        }
+      ],
+      "impact": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your routes with a token or cookies. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage: https://www.npmjs.com/package/csurf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "INJ-005",
+      "domain": "INJ",
+      "severity": "Low",
+      "title": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are p",
+      "evidence": [
+        {
+          "file": "backend/__tests__/mailRoutes.test.js",
+          "line": 19,
+          "snippet": "const app = express();"
+        }
+      ],
+      "impact": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your routes with a token or cookies. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage: https://www.npmjs.com/package/csurf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "INJ-006",
+      "domain": "INJ",
+      "severity": "Low",
+      "title": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are p",
+      "evidence": [
+        {
+          "file": "backend/__tests__/questionRoutes.test.js",
+          "line": 34,
+          "snippet": "const app = express();"
+        }
+      ],
+      "impact": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your routes with a token or cookies. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage: https://www.npmjs.com/package/csurf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "INJ-007",
+      "domain": "INJ",
+      "severity": "Low",
+      "title": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are p",
+      "evidence": [
+        {
+          "file": "backend/__tests__/rateLimit.test.js",
+          "line": 82,
+          "snippet": "const app = express();"
+        }
+      ],
+      "impact": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your routes with a token or cookies. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage: https://www.npmjs.com/package/csurf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "INJ-008",
+      "domain": "INJ",
+      "severity": "Low",
+      "title": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are p",
+      "evidence": [
+        {
+          "file": "backend/index.js",
+          "line": 16,
+          "snippet": "const app = express();"
+        }
+      ],
+      "impact": "A CSRF middleware was not detected in your express application. Ensure you are either using one such as `csurf` or `csrf` (see rule references) and/or you are properly doing CSRF validation in your routes with a token or cookies. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.express.security.audit.express-check-csurf-middleware-usage.express-check-csurf-middleware-usage: https://www.npmjs.com/package/csurf",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    }
+  ],
+  "fixed": [],
+  "questions": [],
+  "coverage_gaps": [
+    "GitHub's own alert list was not read (dependabot: HTTP 403 or unavailable). Public scanner proxy used instead.",
+    "GitHub's own alert list was not read (code-scanning: HTTP 403 or unavailable). Public scanner proxy used instead.",
+    "GitHub's own alert list was not read (secret-scanning: HTTP 403 or unavailable). Public scanner proxy used instead."
+  ],
+  "chapters": [
+    {
+      "id": "architecture",
+      "status": "analyzed",
+      "note": "Public clone layout reviewed via README.md, docker-compose.yml; monorepo/components inferred from manifests.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        },
+        {
+          "file": "docker-compose.yml",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "cicd",
+      "status": "analyzed",
+      "note": "Reviewed 7 GitHub workflow file(s) under .github/workflows; 15 supply-chain/workflow finding(s) from scanners.",
+      "finding_ids": [
+        "CICD-001",
+        "CICD-002",
+        "CICD-003",
+        "CICD-004",
+        "CICD-005",
+        "CICD-006",
+        "CICD-007",
+        "CICD-008",
+        "CICD-009",
+        "CICD-010",
+        "CICD-011",
+        "CICD-012",
+        "CICD-013",
+        "CICD-014",
+        "CICD-015"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "zero-trust",
+      "status": "analyzed",
+      "note": "Mapped 8 Critical/High/Medium finding(s) to Verify Explicitly / Least Privilege / Assume Breach themes from scanner output.",
+      "finding_ids": [
+        "CICD-001",
+        "CICD-002",
+        "CICD-003",
+        "CICD-004",
+        "CICD-005",
+        "CICD-006",
+        "CICD-007",
+        "CICD-008"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "authn",
+      "status": "analyzed",
+      "note": "Authentication file checks and scanner hits: 2 open, 0 confirmed-fixed (AUTH seeds when target is nr-fom).",
+      "finding_ids": [
+        "AUTH-001",
+        "AUTH-002"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "authz",
+      "status": "not_assessed",
+      "note": "No NestJS @UseGuards/@Roles/CanActivate patterns found for automated authz rules.",
+      "finding_ids": [],
+      "evidence": []
+    },
+    {
+      "id": "injection",
+      "status": "analyzed",
+      "note": "Semgrep 1.184.0 ran with 35 result(s). scanned 168 path(s). 13 injection-domain finding(s) promoted.",
+      "finding_ids": [
+        "INJ-011",
+        "INJ-009",
+        "INJ-010",
+        "INJ-012",
+        "INJ-013",
+        "INJ-001",
+        "INJ-002",
+        "INJ-003",
+        "INJ-004",
+        "INJ-005",
+        "INJ-006",
+        "INJ-007",
+        "INJ-008"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "configuration",
+      "status": "analyzed",
+      "note": "Configuration findings from scanners: 1. Public manifests reviewed for CORS/debug/TLS defaults where cited.",
+      "finding_ids": [
+        "CONFIG-001"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "cryptography",
+      "status": "analyzed",
+      "note": "Cryptography file checks and scanner hits: 0 open, 0 confirmed-fixed.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "secrets",
+      "status": "analyzed",
+      "note": "gitleaks gitleaks ran with 0 result(s). clean scan. 0 secret finding(s) promoted.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "logging-data",
+      "status": "analyzed",
+      "note": "Logging/PII scanner hits: 0. This pass uses automated rules only, not a full DATA audit.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "code-scanning",
+      "status": "analyzed",
+      "note": "Semgrep 1.184.0 ran with 35 result(s). scanned 168 path(s). Public proxy for GitHub code-scanning until #96. GitHub's own alert list was not read (403/unavailable).",
+      "finding_ids": [
+        "INJ-011",
+        "CICD-001",
+        "CICD-002",
+        "CICD-003",
+        "CICD-004",
+        "CICD-005",
+        "CICD-006",
+        "CICD-007",
+        "CICD-008",
+        "CICD-009",
+        "CICD-010",
+        "CICD-011",
+        "CICD-012",
+        "CICD-013",
+        "CICD-014",
+        "CICD-015",
+        "INFRA-002",
+        "INFRA-004",
+        "INJ-009",
+        "INJ-010"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "secret-scanning",
+      "status": "analyzed",
+      "note": "gitleaks gitleaks ran with 0 result(s). clean scan. Public proxy for GitHub secret-scanning until #96. GitHub's own alert list was not read (403/unavailable).",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "dependabot",
+      "status": "analyzed",
+      "note": "osv-scanner osv-scanner ran with 6 result(s). 6 advisory hit(s). Trivy 0.76.1 ran with 3 result(s). 3 vuln(s), 0 misconfig(s). Public proxy for Dependabot until #96. GitHub's own alert list was not read (403/unavailable).",
+      "finding_ids": [
+        "DEPS-001",
+        "DEPS-002",
+        "DEPS-003",
+        "DEPS-004",
+        "DEPS-005",
+        "DEPS-006"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "dependencies",
+      "status": "analyzed",
+      "note": "osv-scanner osv-scanner ran with 6 result(s). 6 advisory hit(s). Trivy 0.76.1 ran with 3 result(s). 3 vuln(s), 0 misconfig(s). 6 dependency finding(s) promoted after dedupe.",
+      "finding_ids": [
+        "DEPS-001",
+        "DEPS-002",
+        "DEPS-003",
+        "DEPS-004",
+        "DEPS-005",
+        "DEPS-006"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "containers-iac",
+      "status": "analyzed",
+      "note": "Trivy 0.76.1 ran with 3 result(s). 3 vuln(s), 0 misconfig(s). 4 IaC/container finding(s).",
+      "finding_ids": [
+        "INFRA-002",
+        "INFRA-004",
+        "INFRA-001",
+        "INFRA-003"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "testing",
+      "status": "analyzed",
+      "note": "No unit/e2e test files matched common patterns in the public clone.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "stack",
+      "status": "analyzed",
+      "note": "Stack from public manifests: engines=n/a; renovate=yes; 7 workflow file(s).",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "renovate.json",
+          "line": 1
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "semgrep": {
+      "ok": true,
+      "version": "1.184.0",
+      "count": 35,
+      "detail": "scanned 168 path(s)"
+    },
+    "gitleaks": {
+      "ok": true,
+      "version": "gitleaks",
+      "count": 0,
+      "detail": "clean scan"
+    },
+    "osv-scanner": {
+      "ok": true,
+      "version": "osv-scanner",
+      "count": 6,
+      "detail": "6 advisory hit(s)"
+    },
+    "trivy": {
+      "ok": true,
+      "version": "0.76.1",
+      "count": 3,
+      "detail": "3 vuln(s), 0 misconfig(s)"
+    },
+    "dependabot": {
+      "ok": false,
+      "version": "unknown",
+      "count": 0,
+      "detail": "WARN: dependabot unavailable: gh: Resource not accessible by integration (HTTP 403)"
+    },
+    "code-scanning": {
+      "ok": false,
+      "version": "unknown",
+      "count": 0,
+      "detail": "WARN: code-scanning unavailable: gh: Resource not accessible by integration (HTTP 403)"
+    },
+    "secret-scanning": {
+      "ok": false,
+      "version": "unknown",
+      "count": 0,
+      "detail": "WARN: secret-scanning-raw unavailable: gh: Resource not accessible by integration (HTTP 403)"
+    }
+  },
+  "generator": "scripts/compile-findings.py"
+}

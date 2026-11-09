@@ -1,0 +1,774 @@
+{
+  "repository": "bcgov/nr-seedtransfer-map",
+  "commit": "ae8766441241e9ba3dadc054352c2646fec8f0a0",
+  "findings": [
+    {
+      "id": "CICD-001",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/demo-deploy.yml",
+          "line": 31,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-002",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/merge.yml",
+          "line": 20,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-003",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/merge.yml",
+          "line": 22,
+          "snippet": "uses: actions/setup-node@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-004",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/merge.yml",
+          "line": 37,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-005",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/merge.yml",
+          "line": 39,
+          "snippet": "uses: actions/setup-node@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-006",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/pr-close.yml",
+          "line": 36,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-007",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/pr-close.yml",
+          "line": 60,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-008",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/pr-open.yml",
+          "line": 24,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-009",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/pr-open.yml",
+          "line": 37,
+          "snippet": "uses: actions/setup-node@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-010",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/pr-open.yml",
+          "line": 52,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-011",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/pr-open.yml",
+          "line": 54,
+          "snippet": "uses: actions/setup-node@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-012",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/pr-open.yml",
+          "line": 65,
+          "snippet": "uses: actions/cache@v6"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-013",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/pr-open.yml",
+          "line": 96,
+          "snippet": "- uses: actions/checkout@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CICD-014",
+      "domain": "CICD",
+      "severity": "Medium",
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
+      "evidence": [
+        {
+          "file": ".github/workflows/pr-open.yml",
+          "line": 98,
+          "snippet": "uses: actions/setup-node@v7"
+        }
+      ],
+      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-1357",
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "CRYPTO-001",
+      "domain": "CRYPTO",
+      "severity": "Medium",
+      "title": "Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacke",
+      "evidence": [
+        {
+          "file": "scripts/convert-to-fgb.js",
+          "line": 204,
+          "snippet": "[redacted: possible credential]"
+        }
+      ],
+      "impact": "Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sani CWE: CWE-22 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal: https://owasp.org/www-community/attacks/Path_Traversal",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-22"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "CRYPTO-002",
+      "domain": "CRYPTO",
+      "severity": "Medium",
+      "title": "Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacke",
+      "evidence": [
+        {
+          "file": "scripts/convert-to-fgb.js",
+          "line": 240,
+          "snippet": "[redacted: possible credential]"
+        }
+      ],
+      "impact": "Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sani CWE: CWE-22 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal: https://owasp.org/www-community/attacks/Path_Traversal",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-22"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "CRYPTO-003",
+      "domain": "CRYPTO",
+      "severity": "Medium",
+      "title": "Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacke",
+      "evidence": [
+        {
+          "file": "scripts/export-layers-to-fgb.js",
+          "line": 57,
+          "snippet": "[redacted: possible credential]"
+        }
+      ],
+      "impact": "Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sani CWE: CWE-22 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal: https://owasp.org/www-community/attacks/Path_Traversal",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-22"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "DEPS-001",
+      "domain": "DEPS",
+      "severity": "Medium",
+      "title": "minimatch 10.2.6 affected by GHSA-g3hv-75wg-m249",
+      "evidence": [
+        {
+          "file": "package-lock.json",
+          "line": 1312,
+          "snippet": "\"node_modules/minimatch\": {"
+        }
+      ],
+      "impact": "minimatch has potential denial of service via globparts amplification CWE: CWE-405 Aliases: CVE-2026-118764.",
+      "recommendation": "Upgrade minimatch from 10.2.6 to a patched release per GHSA-g3hv-75wg-m249.",
+      "source": "osv-scanner",
+      "cwe": [
+        "CWE-405"
+      ]
+    },
+    {
+      "id": "INJ-001",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for",
+      "evidence": [
+        {
+          "file": "docs/index.html",
+          "line": 22,
+          "snippet": "<link rel=\"stylesheet\" href=\"https://js.arcgis.com/4.34/esri/themes/light/main.css\" />"
+        }
+      ],
+      "impact": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for example from a CDN) are delivered without unexpected manipulation. Without this CWE: CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for html.security.audit.missing-integrity.missing-integrity: https://owasp.org/Top10/A08_2021-Software_and_Data_Integrity_Failures",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "INJ-002",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for",
+      "evidence": [
+        {
+          "file": "docs/index.html",
+          "line": 35,
+          "snippet": "<script src=\"https://js.arcgis.com/4.34/\"></script>"
+        }
+      ],
+      "impact": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for example from a CDN) are delivered without unexpected manipulation. Without this CWE: CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for html.security.audit.missing-integrity.missing-integrity: https://owasp.org/Top10/A08_2021-Software_and_Data_Integrity_Failures",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "INJ-003",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for",
+      "evidence": [
+        {
+          "file": "docs/index.html",
+          "line": 36,
+          "snippet": "<script type=\"module\" src=\"https://js.arcgis.com/4.34/map-components/\"></script>"
+        }
+      ],
+      "impact": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for example from a CDN) are delivered without unexpected manipulation. Without this CWE: CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for html.security.audit.missing-integrity.missing-integrity: https://owasp.org/Top10/A08_2021-Software_and_Data_Integrity_Failures",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "INJ-004",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for",
+      "evidence": [
+        {
+          "file": "docs/index.html",
+          "line": 37,
+          "snippet": "<script"
+        }
+      ],
+      "impact": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for example from a CDN) are delivered without unexpected manipulation. Without this CWE: CWE-353",
+      "recommendation": "Follow Semgrep rule guidance for html.security.audit.missing-integrity.missing-integrity: https://owasp.org/Top10/A08_2021-Software_and_Data_Integrity_Failures",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-353"
+      ]
+    },
+    {
+      "id": "INJ-005",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "Manually-created forms in django templates should specify a csrf_token to prevent CSRF attacks.",
+      "evidence": [
+        {
+          "file": "docs/index.html",
+          "line": 423,
+          "snippet": "[redacted: possible credential]"
+        }
+      ],
+      "impact": "Manually-created forms in django templates should specify a csrf_token to prevent CSRF attacks. CWE: CWE-352 OWASP: A01 Broken Access Control",
+      "recommendation": "Follow Semgrep rule guidance for python.django.security.django-no-csrf-token.django-no-csrf-token: https://docs.djangoproject.com/en/4.2/howto/csrf/",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-352"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ]
+    },
+    {
+      "id": "INJ-006",
+      "domain": "INJ",
+      "severity": "Medium",
+      "title": "This Renovate configuration does not set a minimum release age. Newly published packages can be malicious or unstable. Add `\"minimumReleaseAge\": \"7 days\"` withi",
+      "evidence": [
+        {
+          "file": "renovate.json",
+          "line": 20,
+          "snippet": "{"
+        }
+      ],
+      "impact": "This Renovate configuration does not set a minimum release age. Newly published packages can be malicious or unstable. Add `\"minimumReleaseAge\": \"7 days\"` within a `packageRules` entry to wait 7 days before proposing updates to newly publis CWE: CWE-829",
+      "recommendation": "Follow Semgrep rule guidance for package_managers.renovate.renovate-missing-minimum-release-age.renovate-missing-minimum-release-age: https://docs.renovatebot.com/configuration-options/#minimumreleaseage",
+      "source": "semgrep",
+      "cwe": [
+        "CWE-829"
+      ]
+    }
+  ],
+  "fixed": [],
+  "questions": [],
+  "coverage_gaps": [
+    "GitHub's own alert list was not read (dependabot: HTTP 403 or unavailable). Public scanner proxy used instead.",
+    "GitHub's own alert list was not read (code-scanning: HTTP 403 or unavailable). Public scanner proxy used instead.",
+    "GitHub's own alert list was not read (secret-scanning: HTTP 403 or unavailable). Public scanner proxy used instead."
+  ],
+  "chapters": [
+    {
+      "id": "architecture",
+      "status": "analyzed",
+      "note": "Public clone layout reviewed via README.md, package.json; monorepo/components inferred from manifests.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        },
+        {
+          "file": "package.json",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "cicd",
+      "status": "analyzed",
+      "note": "Reviewed 5 GitHub workflow file(s) under .github/workflows; 14 supply-chain/workflow finding(s) from scanners.",
+      "finding_ids": [
+        "CICD-001",
+        "CICD-002",
+        "CICD-003",
+        "CICD-004",
+        "CICD-005",
+        "CICD-006",
+        "CICD-007",
+        "CICD-008",
+        "CICD-009",
+        "CICD-010",
+        "CICD-011",
+        "CICD-012",
+        "CICD-013",
+        "CICD-014"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "zero-trust",
+      "status": "analyzed",
+      "note": "Mapped 8 Critical/High/Medium finding(s) to Verify Explicitly / Least Privilege / Assume Breach themes from scanner output.",
+      "finding_ids": [
+        "CICD-001",
+        "CICD-002",
+        "CICD-003",
+        "CICD-004",
+        "CICD-005",
+        "CICD-006",
+        "CICD-007",
+        "CICD-008"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "authn",
+      "status": "analyzed",
+      "note": "Authentication file checks and scanner hits: 0 open, 0 confirmed-fixed (AUTH seeds when target is nr-fom).",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "authz",
+      "status": "not_assessed",
+      "note": "No NestJS @UseGuards/@Roles/CanActivate patterns found for automated authz rules.",
+      "finding_ids": [],
+      "evidence": []
+    },
+    {
+      "id": "injection",
+      "status": "analyzed",
+      "note": "Semgrep 1.184.0 ran with 23 result(s). scanned 39 path(s). 6 injection-domain finding(s) promoted.",
+      "finding_ids": [
+        "INJ-001",
+        "INJ-002",
+        "INJ-003",
+        "INJ-004",
+        "INJ-005",
+        "INJ-006"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "configuration",
+      "status": "analyzed",
+      "note": "Configuration findings from scanners: 0. Public manifests reviewed for CORS/debug/TLS defaults where cited.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "cryptography",
+      "status": "analyzed",
+      "note": "Cryptography file checks and scanner hits: 3 open, 0 confirmed-fixed.",
+      "finding_ids": [
+        "CRYPTO-001",
+        "CRYPTO-002",
+        "CRYPTO-003"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "secrets",
+      "status": "analyzed",
+      "note": "gitleaks gitleaks ran with 0 result(s). clean scan. 0 secret finding(s) promoted.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "logging-data",
+      "status": "analyzed",
+      "note": "Logging/PII scanner hits: 0. This pass uses automated rules only, not a full DATA audit.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "code-scanning",
+      "status": "analyzed",
+      "note": "Semgrep 1.184.0 ran with 23 result(s). scanned 39 path(s). Public proxy for GitHub code-scanning until #96. GitHub's own alert list was not read (403/unavailable).",
+      "finding_ids": [
+        "CICD-001",
+        "CICD-002",
+        "CICD-003",
+        "CICD-004",
+        "CICD-005",
+        "CICD-006",
+        "CICD-007",
+        "CICD-008",
+        "CICD-009",
+        "CICD-010",
+        "CICD-011",
+        "CICD-012",
+        "CICD-013",
+        "CICD-014",
+        "CRYPTO-001",
+        "CRYPTO-002",
+        "CRYPTO-003",
+        "INJ-001",
+        "INJ-002",
+        "INJ-003"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "secret-scanning",
+      "status": "analyzed",
+      "note": "gitleaks gitleaks ran with 0 result(s). clean scan. Public proxy for GitHub secret-scanning until #96. GitHub's own alert list was not read (403/unavailable).",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "dependabot",
+      "status": "analyzed",
+      "note": "osv-scanner osv-scanner ran with 1 result(s). 1 advisory hit(s). Trivy 0.76.1 ran with 0 result(s). 0 vuln(s), 0 misconfig(s). Public proxy for Dependabot until #96. GitHub's own alert list was not read (403/unavailable).",
+      "finding_ids": [
+        "DEPS-001"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "dependencies",
+      "status": "analyzed",
+      "note": "osv-scanner osv-scanner ran with 1 result(s). 1 advisory hit(s). Trivy 0.76.1 ran with 0 result(s). 0 vuln(s), 0 misconfig(s). 1 dependency finding(s) promoted after dedupe.",
+      "finding_ids": [
+        "DEPS-001"
+      ],
+      "evidence": []
+    },
+    {
+      "id": "containers-iac",
+      "status": "analyzed",
+      "note": "Trivy 0.76.1 ran with 0 result(s). 0 vuln(s), 0 misconfig(s). 0 IaC/container finding(s).",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "testing",
+      "status": "analyzed",
+      "note": "Found 1 test file(s) matching common unit/e2e patterns in the public clone.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "tests/e2e.spec.js",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "stack",
+      "status": "analyzed",
+      "note": "Stack from public manifests: engines={\"node\": \">=20.19.0\"}; renovate=yes; 5 workflow file(s).",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "package.json",
+          "line": 27
+        },
+        {
+          "file": "renovate.json",
+          "line": 1
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "semgrep": {
+      "ok": true,
+      "version": "1.184.0",
+      "count": 23,
+      "detail": "scanned 39 path(s)"
+    },
+    "gitleaks": {
+      "ok": true,
+      "version": "gitleaks",
+      "count": 0,
+      "detail": "clean scan"
+    },
+    "osv-scanner": {
+      "ok": true,
+      "version": "osv-scanner",
+      "count": 1,
+      "detail": "1 advisory hit(s)"
+    },
+    "trivy": {
+      "ok": true,
+      "version": "0.76.1",
+      "count": 0,
+      "detail": "0 vuln(s), 0 misconfig(s)"
+    },
+    "dependabot": {
+      "ok": false,
+      "version": "unknown",
+      "count": 0,
+      "detail": "WARN: dependabot unavailable: gh: Resource not accessible by integration (HTTP 403)"
+    },
+    "code-scanning": {
+      "ok": false,
+      "version": "unknown",
+      "count": 0,
+      "detail": "WARN: code-scanning unavailable: gh: Resource not accessible by integration (HTTP 403)"
+    },
+    "secret-scanning": {
+      "ok": false,
+      "version": "unknown",
+      "count": 0,
+      "detail": "WARN: secret-scanning-raw unavailable: gh: Resource not accessible by integration (HTTP 403)"
+    }
+  },
+  "generator": "scripts/compile-findings.py"
+}
