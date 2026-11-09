@@ -88,6 +88,8 @@ def render_dashboard(reports_dir: pathlib.Path) -> str:
                 server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
                 server_repo = os.environ.get("GITHUB_REPOSITORY", "bcgov/action-repo-reporter")
                 ref = os.environ.get("GITHUB_REF_NAME", "main")
+                if "merge" in ref or ref.isdigit() or ref.startswith("refs/pull"):
+                    ref = "main"
                 report_url = f"{server_url}/{server_repo}/blob/{ref}/reports/{d.name}/security-assessment.md"
                 cl_text = re.sub(
                     r"\[([^\]]+)\]\((?:\./)?security-assessment\.md\)",

@@ -144,7 +144,7 @@ jobs:
 
           if [ -s reports/cover-letter.md ]; then
             # Rewrite relative link to anchor to the full assessment included below
-            sed -E 's#\[([^]]+)\]\(([./]*|)security-assessment\.md\)#[\1 (included below)](#security-assessment-report)#' reports/cover-letter.md >> "$GITHUB_STEP_SUMMARY"
+            sed -E 's@\[([^]]+)\]\(([./]*|)security-assessment\.md\)@[\1 (included below)](#security-assessment-report)@' reports/cover-letter.md >> "$GITHUB_STEP_SUMMARY"
             printf '\n\n---\n\n' >> "$GITHUB_STEP_SUMMARY"
           fi
           if [ -s reports/security-assessment.md ]; then
