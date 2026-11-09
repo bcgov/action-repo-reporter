@@ -172,9 +172,10 @@ class SemgrepTests(unittest.TestCase):
         self.root = pathlib.Path(self.tmp.name)
         self.bin = self.root / "bin"
         self.bin.mkdir()
+        (self.bin / "python3").symlink_to(sys.executable)
         self.out = self.root / "evidence"
         self.out.mkdir()
-        self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ.get('PATH', '/usr/bin:/bin')}")
+        self.env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin")
 
     def run_scan(self, content, code=0, stderr=""):
         binary = self.bin / "semgrep"
