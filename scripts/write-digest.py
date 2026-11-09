@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Optional cover-letter digest for a rapid-security report.
+"""Optional cover-letter digest for a security report.
 
 Reads already-valid findings.json (+ optional markdown). Never invents findings
 or changes severities/chapters. Every claim must cite a finding ID or chapter
@@ -81,7 +81,7 @@ def deterministic_digest(data: dict, report_link: str) -> str:
     lines = [
         f"# Cover letter: {repo}",
         "",
-        f"This digest summarizes the scripted rapid-security report for `{repo}`. "
+        f"This digest summarizes the scripted security assessment for `{repo}`. "
         f"The source of truth is the compiled report at [{report_link}]({report_link}).",
         "",
         f"Open findings: {len(findings)} "
@@ -142,7 +142,7 @@ def try_llm_digest(data: dict, report_link: str, markdown_path: pathlib.Path | N
         "report_link": report_link,
     }
     prompt = (
-        "Write a <=300 word cover letter for a rapid security assessment. "
+        "Write a <=300 word cover letter for a security assessment. "
         "Only cite finding IDs and chapter ids from the JSON. Do not invent findings, "
         "CVEs, or chapters. Link to report_link. Return markdown only.\n\n"
         + json.dumps(summary)
@@ -165,10 +165,10 @@ def try_llm_digest(data: dict, report_link: str, markdown_path: pathlib.Path | N
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("findings")
-    p.add_argument("--report", default="reports/rapid-security-assessment.md")
+    p.add_argument("--report", default="reports/security-assessment.md")
     p.add_argument("--out", default="reports/cover-letter.md")
     p.add_argument("--report-link", default="",
-                   help="Link to the scripted report, relative to the digest (default: sibling rapid-security-assessment.md)")
+                   help="Link to the scripted report, relative to the digest (default: sibling security-assessment.md)")
     args = p.parse_args()
     findings_path = pathlib.Path(args.findings)
     try:

@@ -1,21 +1,21 @@
-# Multi-Repo Rapid Security Assessments (action-repo-reporter)
+# Multi-Repo Security Assessments (action-repo-reporter)
 
-Central dashboard for automated **rapid security assessments** across Forest Digital
+Central dashboard for automated **security assessments** across Forest Digital
 Services (FDS) public repositories.
 
 The monthly (or dispatch) pipeline clones each target, runs deterministic scanners
 and GitHub security-alert collection, then **scripts** compile `findings.json` and
 render the Markdown report (`scripts/compile-findings.py`, `scripts/render-report.py`).
 An optional cover-letter digest may be added afterward; it cannot invent findings.
-Reports land in this repo under `reports/rapid-security/<repo>/` via a single pull request.
+Reports land in this repo under `reports/<repo>/` via a single pull request.
 
 ## What you get and where
 
 | Output | Path |
 |---|---|
-| Findings (JSON) | `reports/rapid-security/<repo>/findings.json` |
-| EY-style score | `reports/rapid-security/<repo>/score.json` (`min(100, 10C+5H+2M+1L)`) |
-| Human report | `reports/rapid-security/<repo>/rapid-security-assessment.md` |
+| Findings (JSON) | `reports/<repo>/findings.json` |
+| EY-style score | `reports/<repo>/score.json` (`min(100, 10C+5H+2M+1L)`) |
+| Human report | `reports/<repo>/security-assessment.md` |
 
 **How to read severity:** Critical / High / Medium / Low. The score is a weighted
 count capped at 100 (same formula EY used). A high score means many findings, not
@@ -30,15 +30,15 @@ necessarily that the worst item is Critical — always read the findings table.
 | Gitleaks | No secrets found (`[]`) or tool missing. |
 | Trivy / OSV | Tool missing, or a large JSON the compile script triages into dependency findings. |
 
-Publish path: `generate-reports.yml` → download `*rapid-security` artifacts →
-organize into `reports/rapid-security/<repo>/` →
-`peter-evans/create-pull-request` on branch `chore/rapid-security-reports`.
+Publish path: `generate-reports.yml` → download `*security-assessment` artifacts →
+organize into `reports/<repo>/` →
+`peter-evans/create-pull-request` on branch `chore/security-reports`.
 A run that only writes files on the runner (or calls `noop` without that PR) is a
 **failure** — artifacts alone are not a publish.
 
 ## How to run
 
-**User-facing entrypoint:** Actions → **Multi-Repo Rapid Security Assessments**
+**User-facing entrypoint:** Actions → **Multi-Repo Security Assessments**
 (`generate-reports.yml`).
 
 - **Schedule:** 1st of each month 14:00 UTC — all five targets.
@@ -48,27 +48,27 @@ A run that only writes files on the runner (or calls `noop` without that PR) is 
     `bcgov/nr-fom`, `bcgov/nr-hydrometric-rating-curve`, `bcgov/nr-results-exam`,
     `bcgov/nr-seedtransfer-map`, `bcgov/pubcode`.
 
-The reusable assessor (`.github/workflows/rapid-security-assessment.yml`) is
+The reusable assessor (`.github/workflows/security-assessment.yml`) is
 `workflow_call` only — do not dispatch it directly. Findings JSON and chapter
 markdown are authored by scripts, not Copilot.
 
-## Active rapid-security reports
+## Active security reports
 
 After the first successful publish PR merges, browse:
 
-* `reports/rapid-security/nr-fom/`
-* `reports/rapid-security/nr-hydrometric-rating-curve/`
-* `reports/rapid-security/nr-results-exam/`
-* `reports/rapid-security/nr-seedtransfer-map/`
-* `reports/rapid-security/pubcode/`
+* `reports/nr-fom/`
+* `reports/nr-hydrometric-rating-curve/`
+* `reports/nr-results-exam/`
+* `reports/nr-seedtransfer-map/`
+* `reports/pubcode/`
 
 ## Technical architecture
 
 1. **Orchestrator:** [generate-reports.yml](.github/workflows/generate-reports.yml)
    selects targets, fans out, then `commit-reports` publishes one PR.
-2. **Per target:** [rapid-security-assessment.prompt.md](.github/workflows/rapid-security-assessment.prompt.md)
+2. **Per target:** [security-assessment.yml](.github/workflows/security-assessment.yml)
    installs scanners, runs [scripts/security-evidence.sh](scripts/security-evidence.sh),
-   agent writes `reports/findings.json` + `reports/rapid-security-assessment.md`,
+   scripts compile `reports/findings.json` + `reports/security-assessment.md`,
    [scripts/score.py](scripts/score.py) validates cites and scores.
 3. **Secrets:** optional `SECURITY_ALERTS_TOKEN` for cross-repo alert APIs.
 
@@ -78,14 +78,6 @@ After the first successful publish PR merges, browse:
    [generate-reports.yml](.github/workflows/generate-reports.yml) (`select-targets` job).
 2. Ensure `SECURITY_ALERTS_TOKEN` (if used) can read security alerts on that repo.
 3. Commit and merge. Next schedule/dispatch includes it when `repos` is empty.
-
-## Recompile after prompt edits
-
-```bash
-gh aw compile rapid-security-assessment.prompt
-```
-
-CI validates frontmatter with `gh aw validate`.
 
 ## Honest bar
 

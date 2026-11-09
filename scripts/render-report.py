@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render reports/rapid-security-assessment.md from findings.json.
+"""Render reports/security-assessment.md from findings.json.
 
 Scripted author of the chapter markdown (not Copilot). Executive summary from
 counts/top findings/coverage gaps; each finding printed with title, severity,
@@ -42,7 +42,7 @@ def render(data: dict) -> str:
     domain_counts = Counter(f.get("domain") for f in findings if f.get("domain"))
 
     lines = []
-    lines.append(f"# Rapid Security Assessment: {repo}")
+    lines.append(f"# Security Assessment: {repo}")
     lines.append("")
     lines.append(f"Commit: `{commit}`")
     lines.append("")
@@ -243,7 +243,7 @@ def render(data: dict) -> str:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("findings")
-    p.add_argument("--out", default="reports/rapid-security-assessment.md")
+    p.add_argument("--out", default="reports/security-assessment.md")
     args = p.parse_args()
     data = json.loads(pathlib.Path(args.findings).read_text())
     if not isinstance(data, dict):

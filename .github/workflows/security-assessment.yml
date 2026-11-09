@@ -1,4 +1,4 @@
-name: Rapid Security Assessment
+name: Security Assessment
 
 # Per-target assessment called by generate-reports.yml only (workflow_call).
 # Scripted path: evidence -> compile-findings -> render-report -> validate -> score
@@ -71,33 +71,33 @@ jobs:
             --evidence evidence \
             --out reports/findings.json
 
-      - name: Render rapid-security-assessment.md
+      - name: Render security-assessment.md
         run: |
           set -euo pipefail
           python3 scripts/render-report.py reports/findings.json \
-            --out reports/rapid-security-assessment.md
+            --out reports/security-assessment.md
 
       - name: Require report files
         run: |
           set -euo pipefail
           missing=0
-          for f in reports/findings.json reports/rapid-security-assessment.md; do
+          for f in reports/findings.json reports/security-assessment.md; do
             if [ ! -s "$f" ]; then
               echo "::error::Missing required publish input: $f"
               missing=1
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "::error::Rapid security assessment produced no report files — refusing to succeed"
+            echo "::error::Security assessment produced no report files — refusing to succeed"
             exit 1
           fi
-          ls -la reports/findings.json reports/rapid-security-assessment.md
+          ls -la reports/findings.json reports/security-assessment.md
 
       - name: Enforce chapter substance
         run: |
           set -euo pipefail
           python3 scripts/validate-chapters.py \
-            reports/findings.json reports/rapid-security-assessment.md \
+            reports/findings.json reports/security-assessment.md \
             --repo-dir target \
             --evidence-dir evidence
 
@@ -120,9 +120,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/write-digest.py reports/findings.json \
-            --report reports/rapid-security-assessment.md \
+            --report reports/security-assessment.md \
             --out reports/cover-letter.md \
-            --report-link "rapid-security-assessment.md" \
+            --report-link "security-assessment.md" \
             || echo "::warning::digest step returned non-zero; continuing without digest"
 
       - name: Artifact name
@@ -133,7 +133,7 @@ jobs:
         run: |
           set -euo pipefail
           # Artifact names cannot contain '/'.
-          echo "name=$(printf '%s' "$TARGET_REPOSITORY" | tr '/' '-')-rapid-security" >> "$GITHUB_OUTPUT"
+          echo "name=$(printf '%s' "$TARGET_REPOSITORY" | tr '/' '-')-security-assessment" >> "$GITHUB_OUTPUT"
 
       - name: Upload assessment
         if: always()
@@ -143,7 +143,7 @@ jobs:
           path: |
             reports/findings.json
             reports/score.json
-            reports/rapid-security-assessment.md
+            reports/security-assessment.md
             reports/cover-letter.md
             evidence/*.json
             evidence/NOTES.txt
