@@ -28,6 +28,7 @@ jobs:
           test -f scripts/compile-findings.py
           test -f scripts/render-report.py
           test -f scripts/write-digest.py
+          test -f scripts/render-dashboard-summary.py
           # Prompt/lock must not remain as the findings author.
           if [ -f .github/workflows/rapid-security-assessment.prompt.md ] || [ -f .github/workflows/rapid-security-assessment.prompt.lock.yml ]; then
             echo "::error::gh-aw prompt/lock still present; scripted assessor replaces Copilot authorship"

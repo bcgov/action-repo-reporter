@@ -196,6 +196,11 @@ jobs:
             exit 1
           fi
 
+      - name: Render Executive Dashboard to workflow summary
+        run: |
+          set -euo pipefail
+          python3 scripts/render-dashboard-summary.py reports >> "$GITHUB_STEP_SUMMARY"
+
       - name: Open or Update Reports PR
         id: cpr
         if: ${{ !inputs.dry_run }}

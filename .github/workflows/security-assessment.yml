@@ -94,6 +94,7 @@ jobs:
           ls -la reports/findings.json reports/security-assessment.md
 
       - name: Enforce chapter substance
+        id: substance
         run: |
           set -euo pipefail
           python3 scripts/validate-chapters.py \
@@ -102,6 +103,7 @@ jobs:
             --evidence-dir evidence
 
       - name: Validate and score findings
+        id: score
         env:
           TARGET_REPOSITORY: ${{ inputs.target_repository }}
         run: |
@@ -124,6 +126,31 @@ jobs:
             --out reports/cover-letter.md \
             --report-link "security-assessment.md" \
             || echo "::warning::digest step returned non-zero; continuing without digest"
+
+      - name: Publish report to step summary
+        if: always()
+        run: |
+          set -euo pipefail
+          # If substance or scoring validation failed, clearly label output as diagnostic triage only
+          if [ "${{ steps.substance.conclusion }}" != "success" ] || [ "${{ steps.score.conclusion }}" != "success" ]; then
+            {
+              echo "> [!CAUTION]"
+              echo "> **DIAGNOSTIC OUTPUT ONLY — QUALITY GATES FAILED**"
+              echo ">"
+              echo "> This run failed quality validation gates (substance or scoring). The content below is unvalidated diagnostic output for triage and is not an accepted deliverable."
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ -s reports/cover-letter.md ]; then
+            # Rewrite relative link to anchor to the full assessment included below
+            sed -E 's@\[([^]]+)\]\(([./]*|)security-assessment\.md\)@[\1 (included below)](#security-assessment-report)@' reports/cover-letter.md >> "$GITHUB_STEP_SUMMARY"
+            printf '\n\n---\n\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -s reports/security-assessment.md ]; then
+            echo '<a id="security-assessment-report"></a>' >> "$GITHUB_STEP_SUMMARY"
+            cat reports/security-assessment.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Artifact name
         if: always()
