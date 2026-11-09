@@ -125,6 +125,18 @@ jobs:
             --report-link "security-assessment.md" \
             || echo "::warning::digest step returned non-zero; continuing without digest"
 
+      - name: Publish report to step summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -s reports/cover-letter.md ]; then
+            cat reports/cover-letter.md >> "$GITHUB_STEP_SUMMARY"
+            printf '\n\n---\n\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -s reports/security-assessment.md ]; then
+            cat reports/security-assessment.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Artifact name
         if: always()
         id: art

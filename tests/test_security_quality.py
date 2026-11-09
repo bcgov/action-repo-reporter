@@ -356,6 +356,49 @@ class DigestTests(unittest.TestCase):
         self.assertEqual([], dig.cite_check(text, fids, ch, adv), text)
 
 
+class DashboardSummaryTests(unittest.TestCase):
+    def load(self):
+        spec = importlib.util.spec_from_file_location("dashboard", ROOT / "scripts/render-dashboard-summary.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_empty_reports_renders_clean_message(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = mod.render_dashboard(pathlib.Path(tmp))
+            self.assertIn("No organized target reports found.", out)
+
+    def test_rollup_table_and_target_details_rendered(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            target = root / "nr-fom"
+            target.mkdir()
+            (target / "score.json").write_text(json.dumps({
+                "score": 94,
+                "counts": {"Critical": 0, "High": 5, "Medium": 34, "Low": 1}
+            }))
+            (target / "findings.json").write_text(json.dumps({
+                "repository": "bcgov/nr-fom",
+                "commit": "abc1234",
+                "findings": [{"id": "DEPS-001", "severity": "High", "title": "joi"}],
+                "fixed": [{"id": "AUTH-001", "note": "RS256 pinned"}],
+                "coverage_gaps": ["No alerts API access"]
+            }))
+            (target / "cover-letter.md").write_text("Executive cover letter text.")
+
+            out = mod.render_dashboard(root)
+            self.assertIn("# Multi-Repo Security Assessments Dashboard", out)
+            self.assertIn("| [bcgov/nr-fom](https://github.com/bcgov/nr-fom) | **94** / 100 | 0 | 5 | 34 | 1 | 1 | 1 |", out)
+            self.assertIn("<summary><strong>bcgov/nr-fom</strong> — Score: 94 / 100 (1 findings, 1 fixed)</summary>", out)
+            self.assertIn("Executive cover letter text.", out)
+            self.assertIn("**Confirmed Fixed:**", out)
+            self.assertIn("- `AUTH-001`: RS256 pinned", out)
+            self.assertIn("- **DEPS-001** [High]: joi", out)
+            self.assertIn("- No alerts API access", out)
+
+
 
 
 class CompileTests(unittest.TestCase):
