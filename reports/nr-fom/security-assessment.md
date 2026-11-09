@@ -1,6 +1,6 @@
-> Path-proof seed from Actions run 42096113013 artifacts (pre-publish-fix). Replace on next Multi-Repo Rapid Security Assessments publish.
+> Path-proof seed from Actions run 42096113013 artifacts (pre-publish-fix). Replace on next Multi-Repo Security Assessments publish.
 
-# Rapid Security Assessment: bcgov/nr-fom
+# Security Assessment: bcgov/nr-fom
 
 Commit `02d2cfc5fe6d60da7971bffa79b4569475495e39`
 

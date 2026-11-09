@@ -23,7 +23,7 @@ jobs:
       - name: Require scripted assessor workflow
         run: |
           set -euo pipefail
-          test -f .github/workflows/rapid-security-assessment.yml
+          test -f .github/workflows/security-assessment.yml
           test -f .github/workflows/generate-reports.yml
           test -f scripts/compile-findings.py
           test -f scripts/render-report.py
@@ -34,12 +34,12 @@ jobs:
             exit 1
           fi
           # Basic workflow_call-only check on the assessor
-          if grep -q 'workflow_dispatch' .github/workflows/rapid-security-assessment.yml; then
-            echo "::error::rapid-security-assessment.yml must stay workflow_call-only"
+          if grep -q 'workflow_dispatch' .github/workflows/security-assessment.yml; then
+            echo "::error::security-assessment.yml must stay workflow_call-only"
             exit 1
           fi
-          grep -q 'compile-findings.py' .github/workflows/rapid-security-assessment.yml
-          grep -q 'render-report.py' .github/workflows/rapid-security-assessment.yml
+          grep -q 'compile-findings.py' .github/workflows/security-assessment.yml
+          grep -q 'render-report.py' .github/workflows/security-assessment.yml
           echo "Scripted assessor workflow present and call-only"
 
 
@@ -98,7 +98,7 @@ jobs:
           set -euo pipefail
           changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
           echo "$changed"
-          if echo "$changed" | grep -Eq '^(scripts/|tests/|\.github/workflows/(ci|generate-reports|rapid-security-assessment)\.yml$)'; then
+          if echo "$changed" | grep -Eq '^(scripts/|tests/|\.github/workflows/(ci|generate-reports|security-assessment)\.yml$)'; then
             echo "report=true" >> "$GITHUB_OUTPUT"
           else
             echo "report=false" >> "$GITHUB_OUTPUT"

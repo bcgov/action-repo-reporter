@@ -1,9 +1,9 @@
-name: Multi-Repo Rapid Security Assessments
+name: Multi-Repo Security Assessments
 
 # Single report pipeline. Selects the target set (all five by default, or an
-# optional repos filter), calls the reusable gh-aw rapid-security assessment
+# optional repos filter), calls the reusable security assessment
 # once per target, then commit-reports collects artifacts into
-# reports/rapid-security/<repo>/ and opens/updates one reports PR.
+# reports/<repo>/ and opens/updates one reports PR.
 # Former FDS Full-Stack Project Audit is removed; stack checks live in the scripted assessor.
 #
 # User-facing entrypoint: this workflow only. The assessor is workflow_call-only.
@@ -101,7 +101,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: ./.github/workflows/rapid-security-assessment.yml
+    uses: ./.github/workflows/security-assessment.yml
     with:
       target_repository: ${{ matrix.target_repository }}
     secrets: inherit
@@ -124,7 +124,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v8
         with:
-          pattern: "*rapid-security"
+          pattern: "*security-assessment"
           path: artifacts
           merge-multiple: false
 
@@ -133,13 +133,13 @@ jobs:
       - name: Preserve pending reports from open PR branch
         run: |
           set -euo pipefail
-          git fetch origin chore/rapid-security-reports:refs/remotes/origin/chore/rapid-security-reports 2>/dev/null || true
-          if git rev-parse --verify refs/remotes/origin/chore/rapid-security-reports >/dev/null 2>&1; then
-            git checkout origin/chore/rapid-security-reports -- reports/rapid-security/ 2>/dev/null \
-              && echo "Restored pending reports/rapid-security/ from chore/rapid-security-reports" \
-              || echo "No reports/rapid-security/ on pending branch (ok)"
+          git fetch origin chore/security-reports:refs/remotes/origin/chore/security-reports 2>/dev/null || true
+          if git rev-parse --verify refs/remotes/origin/chore/security-reports >/dev/null 2>&1; then
+            git checkout origin/chore/security-reports -- reports/ 2>/dev/null \
+              && echo "Restored pending reports/ from chore/security-reports" \
+              || echo "No reports/ on pending branch (ok)"
           else
-            echo "No pending chore/rapid-security-reports branch (ok)"
+            echo "No pending chore/security-reports branch (ok)"
           fi
 
       - name: Organize Reports
@@ -166,7 +166,7 @@ jobs:
               echo "::warning::skipping $f (bad repository field)"; continue
             fi
             missing=0
-            for g in findings.json score.json rapid-security-assessment.md; do
+            for g in findings.json score.json security-assessment.md; do
               if [ ! -s "$dir/$g" ]; then
                 echo "::warning::skipping $repo — missing or empty $g"
                 missing=1
@@ -175,9 +175,9 @@ jobs:
             if [ "$missing" -ne 0 ]; then
               continue
             fi
-            out="reports/rapid-security/$name"
+            out="reports/$name"
             mkdir -p "$out"
-            for g in findings.json score.json rapid-security-assessment.md; do
+            for g in findings.json score.json security-assessment.md; do
               cp -vf "$dir/$g" "$out/$g"
             done
             if [ -s "$dir/cover-letter.md" ]; then
@@ -190,9 +190,9 @@ jobs:
           done < <(find artifacts -type f -path "*/reports/findings.json" -print0 2>/dev/null || true)
 
           echo "organized=$organized" >> "$GITHUB_OUTPUT"
-          echo "Organized $organized report set(s) under reports/rapid-security/"
+          echo "Organized $organized report set(s) under reports/"
           if [ "$organized" -eq 0 ]; then
-            echo "::error::No rapid-security reports organized from artifacts — refusing to succeed (noop/artifact-only is not a publish)"
+            echo "::error::No security reports organized from artifacts — refusing to succeed (noop/artifact-only is not a publish)"
             exit 1
           fi
 
@@ -201,12 +201,12 @@ jobs:
         if: ${{ !inputs.dry_run }}
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
-          branch: chore/rapid-security-reports
+          branch: chore/security-reports
           base: main
           add-paths: reports/
-          commit-message: "chore: update rapid security assessments"
-          title: "chore: update rapid security assessments"
-          body: Automated rapid security assessment reports from the Multi-Repo Rapid Security Assessments workflow.
+          commit-message: "chore: update security assessments"
+          title: "chore: update security assessments"
+          body: Automated security assessment reports from the Multi-Repo Security Assessments workflow.
           delete-branch: true
 
       - name: Require publish

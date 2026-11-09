@@ -174,7 +174,7 @@ class SemgrepTests(unittest.TestCase):
         self.bin.mkdir()
         self.out = self.root / "evidence"
         self.out.mkdir()
-        self.env = dict(os.environ, PATH=str(self.bin) + ":/usr/bin:/bin")
+        self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ.get('PATH', '/usr/bin:/bin')}")
 
     def run_scan(self, content, code=0, stderr=""):
         binary = self.bin / "semgrep"
@@ -350,7 +350,7 @@ class DigestTests(unittest.TestCase):
             "chapters": [{"id": c, "status": "analyzed"} for c in gate.CHAPTERS],
             "coverage_gaps": ["GitHub's own alert list was not read (code-scanning: HTTP 403 or unavailable)."],
         }
-        text = dig.deterministic_digest(data, "reports/rapid-security/nr-fom/rapid-security-assessment.md")
+        text = dig.deterministic_digest(data, "reports/nr-fom/security-assessment.md")
         fids, ch, adv = dig.allowed_refs(data)
         self.assertEqual([], dig.cite_check(text, fids, ch, adv), text)
 
