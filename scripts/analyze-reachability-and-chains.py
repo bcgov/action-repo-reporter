@@ -264,15 +264,15 @@ def correlate_attack_chains(
         f for f in (by_domain.get("dependencies", []) + by_domain.get("deps", []) + by_domain.get("dependabot", []))
         if f.get("reachability") == "reachable"
     ] or (by_domain.get("injection", []) + by_domain.get("inj", []))
-    secrets = by_domain.get("secrets", []) + by_domain.get("logging-data", []) + by_domain.get("data", [])
-    if reachable_deps and secrets:
+    credential_findings = by_domain.get("secrets", []) + by_domain.get("logging-data", []) + by_domain.get("data", [])
+    if reachable_deps and credential_findings:
         dep = reachable_deps[0]
-        sec = secrets[0]
+        cred_finding = credential_findings[0]
         chain = {
             "id": f"CHAIN-{len(chains)+1:03d}",
             "title": "Reachable Component Flaw to Secret Exfiltration",
             "severity": "High",
-            "findings": [dep["id"], sec["id"]],
+            "findings": [dep["id"], cred_finding["id"]],
             "stages": [
                 {
                     "stage": "Library Exploitation",
@@ -281,15 +281,15 @@ def correlate_attack_chains(
                 },
                 {
                     "stage": "Secret Exfiltration",
-                    "finding_id": sec["id"],
-                    "description": sec.get("title", ""),
+                    "finding_id": cred_finding["id"],
+                    "description": cred_finding.get("title", ""),
                 },
             ],
             "narrative": (
                 f"Exploiting reachable dependency vulnerability {dep['id']} grants memory or execution access "
-                f"within the container context, leading to extraction of secrets identified in {sec['id']}."
+                f"within the container context, leading to extraction of credentials identified in {cred_finding['id']}."
             ),
-            "remediation": "Upgrade the reachable dependency and rotate the exposed secrets.",
+            "remediation": "Upgrade the reachable dependency and rotate the exposed credentials.",
         }
         chain["mermaid"] = generate_chain_mermaid(chain)
         chains.append(chain)
@@ -336,9 +336,11 @@ def correlate_attack_chains(
 
 
 def main() -> int:
+    import sys
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repo_dir", nargs="?", default="target", help="Repository root path")
     parser.add_argument("--findings", default="reports/findings.json", help="Path to findings JSON")
+    parser.add_argument("--out", default="", help="Optional output path")
     args = parser.parse_args()
 
     repo_path = pathlib.Path(args.repo_dir)
@@ -346,13 +348,18 @@ def main() -> int:
 
     if findings_path.is_file():
         data = json.loads(findings_path.read_text(encoding="utf-8"))
-        findings = data.get("findings", [])
-        findings, summary = assess_reachability(repo_path, findings)
-        chains = correlate_attack_chains(findings)
-        print(json.dumps({"vex_summary": summary, "attack_chains": chains}, indent=2))
+        findings_records = data.get("findings", [])
+        assessed_findings, summary = assess_reachability(repo_path, findings_records)
+        chains = correlate_attack_chains(assessed_findings)
+        output = json.dumps({"vex_summary": summary, "attack_chains": chains}, indent=2) + "\n"
     else:
         imported = extract_imported_packages(repo_path)
-        print(json.dumps({"imported_packages": imported}, indent=2))
+        output = json.dumps({"imported_packages": imported}, indent=2) + "\n"
+
+    if args.out:
+        pathlib.Path(args.out).write_text(output)
+    else:
+        sys.stdout.write(output)
 
     return 0
 
