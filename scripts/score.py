@@ -1,10 +1,24 @@
 #!/usr/bin/env python3
-"""Validate findings.json (cite-or-ask) and compute the EY-style risk score: min(100, 10C+5H+2M+1L).
+"""Validate findings.json (cite-or-ask) and compute bounded risk score: 0 (spotless) to 100 (max risk).
 Findings whose file:line citations don't exist in the repo are rejected (moved to `rejected`).
 --require IDs pass if present as an accepted open finding OR in `fixed`/`resolved` with a valid cite."""
-import argparse, json, pathlib, sys
+import argparse, json, math, pathlib, sys
 
-W = {"Critical": 10, "High": 5, "Medium": 2, "Low": 1}
+W = {"Critical": 25, "High": 8, "Medium": 2, "Low": 1}
+
+def compute_risk_score(counts: dict[str, int]) -> int:
+    """Calculate bounded risk score (0-100, where 0 is spotless) with diminishing returns on minor items."""
+    c = counts.get("Critical", 0)
+    h = counts.get("High", 0)
+    m = counts.get("Medium", 0)
+    l = counts.get("Low", 0)
+
+    crit_pts = 25 * c
+    high_pts = min(40, 8 * h)
+    med_pts = min(15, round(4 * math.log(1 + m))) if m > 0 else 0
+    low_pts = min(5, round(l * 0.2)) if l > 0 else 0
+
+    return min(100, crit_pts + high_pts + med_pts + low_pts)
 
 def valid(ev, root):
     """Cite must be a relative path that resolves (symlinks included) inside repo-dir."""
@@ -52,16 +66,32 @@ def main():
     fixed_ok_list, fixed_bad = [], []
     for entry in fixed_raw:
         (fixed_ok_list if fixed_ok(entry, root) else fixed_bad).append(entry)
-    counts = {s: sum(f["severity"] == s for f in ok) for s in W}
-    score = min(100, sum(W[s] * c for s, c in counts.items()))
+    counts = {s: sum(f["severity"] == s for f in ok) for s in ("Critical", "High", "Medium", "Low")}
+    score = compute_risk_score(counts)
     satisfied = {f.get("id") for f in ok} | {e.get("id") for e in fixed_ok_list}
     missing = [r for r in o.require if r not in satisfied]
-    res = {"score": score, "counts": counts, "accepted": len(ok), "rejected": [f.get("id") if isinstance(f, dict) else None for f in bad],
-           "fixed_accepted": [e.get("id") for e in fixed_ok_list],
-           "fixed_rejected": [e.get("id") if isinstance(e, dict) else None for e in fixed_bad],
-           "missing_required": missing}
-    pathlib.Path(o.out).parent.mkdir(parents=True, exist_ok=True); json.dump(res, open(o.out, "w"), indent=2)
-    print(json.dumps(res, indent=2)); sys.exit(1 if missing else 0)
+    m_cnt = counts.get("Medium", 0)
+    l_cnt = counts.get("Low", 0)
+    res = {
+        "score": score,
+        "counts": counts,
+        "breakdown": {
+            "Critical": 25 * counts.get("Critical", 0),
+            "High": min(40, 8 * counts.get("High", 0)),
+            "Medium": min(15, round(4 * math.log(1 + m_cnt))) if m_cnt > 0 else 0,
+            "Low": min(5, round(l_cnt * 0.2)) if l_cnt > 0 else 0,
+        },
+        "accepted": len(ok),
+        "rejected": [f.get("id") if isinstance(f, dict) else None for f in bad],
+        "fixed_accepted": [e.get("id") for e in fixed_ok_list],
+        "fixed_rejected": [e.get("id") if isinstance(e, dict) else None for e in fixed_bad],
+        "missing_required": missing,
+    }
+    pathlib.Path(o.out).parent.mkdir(parents=True, exist_ok=True)
+    with open(o.out, "w") as out_fp:
+        json.dump(res, out_fp, indent=2)
+    print(json.dumps(res, indent=2))
+    sys.exit(1 if missing else 0)
 
 if __name__ == "__main__":
     main()

@@ -16,6 +16,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import urllib.parse
 from collections import defaultdict
 from typing import Any
 
@@ -225,6 +226,127 @@ def cite(root: pathlib.Path, rel: str, line: int, snippet: str = "") -> dict | N
     return {"file": rel, "line": line, "snippet": snippet_at(root, rel, line, snippet)}
 
 
+def is_allowlisted_action_tag(snippet: str, title: str) -> bool:
+    """Allow floating tags for trusted official actions (actions/*, github/*, docker/*, bcgov/*)."""
+    if not re.search(r"mutable tag|mutable.*branch|unpinned|pin.*action|commit sha", title, re.I):
+        return False
+    m = re.search(r"""(?:^|\s)(?:-\s+)?uses:\s*['"]?([^\s'"]+)""", snippet, re.I)
+    if not m:
+        return False
+    action_ref = m.group(1).lower()
+    for org in ("actions/", "github/", "docker/", "bcgov/"):
+        if action_ref.startswith(org):
+            return True
+    return False
+
+
+def is_internal_secrets_inherit(root: pathlib.Path, path: str, line: int, title: str) -> bool:
+    """Ignore secrets: inherit when calling internal relative or same-org reusable workflows."""
+    if not re.search(r"secrets?:\s*inherit", title, re.I):
+        return False
+    try:
+        target = (pathlib.Path(root) / path).resolve()
+        if not target.is_file():
+            return False
+        lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
+        if line < 1 or line > len(lines):
+            return False
+
+        # Indentation of cited secrets: inherit line
+        cited_line = lines[line - 1]
+        inherit_indent = len(cited_line) - len(cited_line.lstrip())
+
+        # Scan backwards to locate the job header (line with strictly less indentation)
+        job_start = line - 1
+        job_indent = inherit_indent
+        for i in range(line - 2, -1, -1):
+            stripped = lines[i].strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            curr_indent = len(lines[i]) - len(lines[i].lstrip())
+            if curr_indent < inherit_indent:
+                job_start = i
+                job_indent = curr_indent
+                break
+
+        # Scan forwards from job_start until the job block ends
+        job_lines = []
+        for i in range(job_start, len(lines)):
+            stripped = lines[i].strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            curr_indent = len(lines[i]) - len(lines[i].lstrip())
+            if i > job_start and curr_indent <= job_indent:
+                break
+            job_lines.append(lines[i])
+
+        # Resolve the uses: value belonging to this specific job
+        for j_line in job_lines:
+            m = re.search(r"""(?:^|\s)uses:\s*['"]?([^\s'"]+)""", j_line)
+            if m:
+                callee = m.group(1).lower()
+                return callee.startswith("./") or callee.startswith(".github/workflows/") or callee.startswith("bcgov/")
+    except Exception:
+        pass
+    return False
+
+
+def is_ignorable_plaintext_http(path: str, snippet: str, title: str) -> bool:
+    """Ignore plaintext HTTP URLs in documentation, schemas, and static footer templates."""
+    if not re.search(r"plaintext http|unencrypted http|cleartext http", title, re.I):
+        return False
+
+    ext = pathlib.Path(path).suffix.lower()
+    path_low = path.lower()
+
+    # 1. Markdown and documentation files
+    if ext in (".md", ".txt", ".rst"):
+        return True
+
+    # Extract HTTP URLs from the snippet
+    urls = re.findall(r"http://[^\s\"'<>]+", snippet)
+    if not urls:
+        return False
+
+    parsed_hosts = []
+    for u in urls:
+        try:
+            h = (urllib.parse.urlparse(u).hostname or "").lower()
+            if h:
+                parsed_hosts.append(h)
+        except Exception:
+            pass
+
+    if not parsed_hosts:
+        return False
+
+    def is_trusted_schema_host(h: str) -> bool:
+        return h in ("w3.org", "json-schema.org", "schema.org") or any(
+            h.endswith("." + d) for d in ("w3.org", "json-schema.org", "schema.org")
+        )
+
+    def is_bcgov_host(h: str) -> bool:
+        return h == "gov.bc.ca" or h.endswith(".gov.bc.ca")
+
+    def is_local_or_example(h: str) -> bool:
+        return h in ("localhost", "127.0.0.1", "example.com") or h.endswith(".example.com")
+
+    # 2. Schema or namespace declaration context (e.g. xmlns, $schema)
+    is_schema_context = bool(re.search(r"""(?:xmlns|\$schema|schemaLocation)\b""", snippet, re.I))
+    if is_schema_context or any(is_trusted_schema_host(h) for h in parsed_hosts):
+        if all(is_trusted_schema_host(h) or is_local_or_example(h) for h in parsed_hosts):
+            return True
+
+    # 3. Static template / footer navigation links
+    is_link_tag = bool(re.search(r"""<a\s+[^>]*href=['"]http://""", snippet, re.I)) or "href=" in snippet
+    is_template_or_footer = ext in (".html", ".htm") or "footer" in path_low
+    if is_template_or_footer and is_link_tag:
+        if all(is_bcgov_host(h) or is_local_or_example(h) for h in parsed_hosts):
+            return True
+
+    return False
+
+
 class Compiler:
     def __init__(self, repo: str, root: pathlib.Path, evidence: pathlib.Path):
         self.repo = repo
@@ -367,6 +489,14 @@ class Compiler:
             cwes = extract_cwes(meta.get("cwe") or meta.get("cwe_ids") or extra.get("cwe"))
             check_id = str(r.get("check_id") or "semgrep")
             message = str(extra.get("message") or meta.get("message") or check_id)
+            title = message.split("\n")[0][:160] or check_id
+            snip = ev.get("snippet") or extra.get("lines") or ""
+            if is_allowlisted_action_tag(snip, title):
+                continue
+            if is_internal_secrets_inherit(self.root, path, line, title):
+                continue
+            if is_ignorable_plaintext_http(path, snip, title):
+                continue
             severity = normalize_severity(extra.get("severity") or meta.get("impact"))
             domain = self._semgrep_domain(check_id, meta, path)
             if domain in ("secrets", "cryptography") or re.search(
@@ -577,10 +707,18 @@ class Compiler:
                 if not ev:
                     continue
                 mid = str(m.get("ID") or m.get("AVDID") or "trivy-misconfig")
+                m_title = str(m.get("Title") or mid)[:160]
+                m_snip = ev.get("snippet") or ""
+                if is_allowlisted_action_tag(m_snip, m_title):
+                    continue
+                if is_internal_secrets_inherit(self.root, path, line, m_title):
+                    continue
+                if is_ignorable_plaintext_http(path, m_snip, m_title):
+                    continue
                 domain = "cicd" if path.startswith(".github/") else "containers-iac"
                 self._add_finding(
                     domain=domain, severity=normalize_severity(m.get("Severity")),
-                    title=str(m.get("Title") or mid)[:160],
+                    title=m_title,
                     evidence=[ev],
                     impact=str(m.get("Message") or m.get("Description") or mid)[:300],
                     recommendation=str(m.get("Resolution") or "Apply the Trivy misconfiguration remediation.")[:400],
@@ -649,10 +787,18 @@ class Compiler:
             if not ev:
                 return
             help_text = str(rule.get("help") or rule.get("description") or rule.get("name") or "Code scanning alert")
+            title = str(rule.get("name") or rule.get("id") or "code-scanning")[:160]
+            snip = ev.get("snippet") or text or ""
+            if is_allowlisted_action_tag(snip, title):
+                return
+            if is_internal_secrets_inherit(self.root, path, int(line), title):
+                return
+            if is_ignorable_plaintext_http(path, snip, title):
+                return
             self._add_finding(
                 domain="injection",
                 severity=normalize_severity(rule.get("security_severity_level")),
-                title=str(rule.get("name") or rule.get("id") or "code-scanning")[:160],
+                title=title,
                 evidence=[ev], impact=help_text[:400],
                 recommendation=str(rule.get("help") or "Follow code-scanning remediation guidance.")[:400],
                 source="codeql", cwes=extract_cwes(rule.get("tags")),
