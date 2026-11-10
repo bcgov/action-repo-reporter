@@ -1,12 +1,18 @@
 {
-  "score": 53,
+  "score": 9,
   "counts": {
     "Critical": 0,
     "High": 0,
-    "Medium": 26,
+    "Medium": 9,
     "Low": 1
   },
-  "accepted": 27,
+  "breakdown": {
+    "Critical": 0,
+    "High": 0,
+    "Medium": 9,
+    "Low": 0
+  },
+  "accepted": 10,
   "rejected": [],
   "fixed_accepted": [],
   "fixed_rejected": [],

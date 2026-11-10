@@ -37,328 +37,8 @@
     ],
     "unassessed_packages": []
   },
-  "attack_chains": [
-    {
-      "id": "CHAIN-001",
-      "title": "[root-app] Reachable Component Flaw to Secret Exfiltration",
-      "severity": "High",
-      "component": "root-app",
-      "findings": [
-        "INJ-001",
-        "DATA-001"
-      ],
-      "stages": [
-        {
-          "stage": "Library Exploitation",
-          "finding_id": "INJ-001",
-          "description": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for"
-        },
-        {
-          "stage": "Secret Exfiltration",
-          "finding_id": "DATA-001",
-          "description": "Raw HTTP client error object passed directly to logger"
-        }
-      ],
-      "narrative": "In component 'root-app', exploiting reachable dependency vulnerability INJ-001 grants code execution access within the container context, leading to extraction of credentials identified in DATA-001.",
-      "remediation": "Upgrade the reachable dependency and rotate the exposed credentials.",
-      "mermaid": "graph LR\n    S1[\"INJ-001: Library Exploitation<br/><i>This tag is missing an 'integrity' sub</i>\"]\n    S2[\"DATA-001: Secret Exfiltration<br/><i>Raw HTTP client error object passed di</i>\"]\n    S1 -->|enables| S2\n    S2 -->|Impact| Target[\"[root-app] Reachable Component Flaw to Secret Exfiltration\"]"
-    }
-  ],
+  "attack_chains": [],
   "findings": [
-    {
-      "id": "CICD-001",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/demo-deploy.yml",
-          "line": 31,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-002",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/merge.yml",
-          "line": 20,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-003",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/merge.yml",
-          "line": 22,
-          "snippet": "uses: actions/setup-node@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-004",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/merge.yml",
-          "line": 37,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-005",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/merge.yml",
-          "line": 39,
-          "snippet": "uses: actions/setup-node@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-006",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/pr-close.yml",
-          "line": 36,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-007",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/pr-close.yml",
-          "line": 60,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-008",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/pr-open.yml",
-          "line": 24,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-009",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/pr-open.yml",
-          "line": 37,
-          "snippet": "uses: actions/setup-node@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-010",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/pr-open.yml",
-          "line": 52,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-011",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/pr-open.yml",
-          "line": 54,
-          "snippet": "uses: actions/setup-node@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-012",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/pr-open.yml",
-          "line": 65,
-          "snippet": "uses: actions/cache@v6"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-013",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/pr-open.yml",
-          "line": 96,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "CICD-014",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/pr-open.yml",
-          "line": 98,
-          "snippet": "uses: actions/setup-node@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root-app"
-    },
     {
       "id": "CRYPTO-001",
       "domain": "CRYPTO",
@@ -425,75 +105,6 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "DATA-001",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "docs/scripts/defineMap.js",
-          "line": 147,
-          "snippet": "console.error('Failed to load Management Unit layer from local FlatGeobuf.', error)"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "DATA-002",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "docs/scripts/defineMap.js",
-          "line": 479,
-          "snippet": "console.error(error)"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "root-app"
-    },
-    {
-      "id": "DATA-003",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "scripts/export-layers-to-fgb.js",
-          "line": 348,
-          "snippet": "console.error('Error exporting layers:', err);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
       ],
       "component": "root-app"
     },
@@ -674,40 +285,26 @@
     {
       "id": "cicd",
       "status": "analyzed",
-      "note": "Reviewed 5 GitHub workflow file(s) under .github/workflows; 14 supply-chain/workflow finding(s) from scanners.",
-      "finding_ids": [
-        "CICD-001",
-        "CICD-002",
-        "CICD-003",
-        "CICD-004",
-        "CICD-005",
-        "CICD-006",
-        "CICD-007",
-        "CICD-008",
-        "CICD-009",
-        "CICD-010",
-        "CICD-011",
-        "CICD-012",
-        "CICD-013",
-        "CICD-014"
-      ],
-      "evidence": []
+      "note": "Reviewed 5 GitHub workflow file(s) under .github/workflows; 0 supply-chain/workflow finding(s) from scanners.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": ".github/workflows/demo-deploy.yml",
+          "line": 1
+        }
+      ]
     },
     {
       "id": "zero-trust",
       "status": "analyzed",
-      "note": "Mapped 8 Critical/High/Medium finding(s) to Verify Explicitly / Least Privilege / Assume Breach themes from scanner output.",
-      "finding_ids": [
-        "CICD-001",
-        "CICD-002",
-        "CICD-003",
-        "CICD-004",
-        "CICD-005",
-        "CICD-006",
-        "CICD-007",
-        "CICD-008"
-      ],
-      "evidence": []
+      "note": "Mapped 0 Critical/High/Medium finding(s) to Verify Explicitly / Least Privilege / Assume Breach themes from scanner output.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
     },
     {
       "id": "authn",
@@ -780,39 +377,29 @@
     {
       "id": "logging-data",
       "status": "analyzed",
-      "note": "Logging/PII semantic and scanner hits: 3. Review checked client error logging and credential leaks.",
-      "finding_ids": [
-        "DATA-001",
-        "DATA-002",
-        "DATA-003"
-      ],
-      "evidence": []
+      "note": "Logging/PII semantic and scanner hits: 0. Review checked client error logging and credential leaks.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
     },
     {
       "id": "code-scanning",
       "status": "analyzed",
       "note": "Semgrep 1.184.0 ran with 23 result(s). scanned 39 path(s). Public proxy for GitHub code-scanning until #96. GitHub's own alert list was not read (403/unavailable).",
       "finding_ids": [
-        "CICD-001",
-        "CICD-002",
-        "CICD-003",
-        "CICD-004",
-        "CICD-005",
-        "CICD-006",
-        "CICD-007",
-        "CICD-008",
-        "CICD-009",
-        "CICD-010",
-        "CICD-011",
-        "CICD-012",
-        "CICD-013",
-        "CICD-014",
         "CRYPTO-001",
         "CRYPTO-002",
         "CRYPTO-003",
         "INJ-001",
         "INJ-002",
-        "INJ-003"
+        "INJ-003",
+        "INJ-004",
+        "INJ-005",
+        "INJ-006"
       ],
       "evidence": []
     },

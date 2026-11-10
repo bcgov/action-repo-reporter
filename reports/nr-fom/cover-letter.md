@@ -2,14 +2,14 @@
 
 This digest summarizes the scripted security assessment for `bcgov/nr-fom`. The source of truth is the compiled report at [security-assessment.md](security-assessment.md).
 
-Open findings: 51 (Critical 0, High 4, Medium 43, Low 4); confirmed-fixed: 2. Chapters analyzed: 17; not_assessed: 0.
+Open findings: 19 (Critical 0, High 1, Medium 14, Low 4); confirmed-fixed: 2. Chapters analyzed: 17; not_assessed: 0.
 
 Highest-priority items (by severity order in findings.json):
 - CICD-001 (High): Using variable interpolation `${{...}}` with `github` context data in a `run:` step could allow an attacker to inject their own code into the runner. This would
-- CICD-010 (High): This workflow uses `secrets: inherit` to pass all of the calling workflow's secrets to a reusable workflow. This violates the principle of least privilege becau
-- CICD-012 (High): This workflow uses `secrets: inherit` to pass all of the calling workflow's secrets to a reusable workflow. This violates the principle of least privilege becau
-- CICD-014 (High): This workflow uses `secrets: inherit` to pass all of the calling workflow's secrets to a reusable workflow. This violates the principle of least privilege becau
-- CICD-002 (Medium): GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks —
+- CONFIG-001 (Medium): Access-Control-Allow-Origin response header is set to "*". This will disable CORS Same Origin Policy restrictions.
+- CRYPTO-002 (Medium): Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacke
+- DEPS-005 (Medium): minimatch 10.2.6 affected by GHSA-g3hv-75wg-m249
+- DEPS-006 (Medium): minimatch 9.0.9 affected by GHSA-g3hv-75wg-m249
 
 Confirmed-fixed seeds/checks: AUTH-001, CRYPTO-001.
 

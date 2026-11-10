@@ -1,6 +1,6 @@
 {
   "repository": "bcgov/nr-fom",
-  "commit": "add5cf51f467720790da2333397d57473f70a998",
+  "commit": "8fa7ff26f5b45cda739b582ef9b1458106843914",
   "components": [
     {
       "id": "public-web-server",
@@ -197,33 +197,7 @@
     ],
     "unassessed_packages": []
   },
-  "attack_chains": [
-    {
-      "id": "CHAIN-001",
-      "title": "[api] Permissive Configuration to Cross-Origin Session Exfiltration",
-      "severity": "High",
-      "component": "api",
-      "findings": [
-        "CONFIG-001",
-        "DATA-002"
-      ],
-      "stages": [
-        {
-          "stage": "Security Misconfiguration",
-          "finding_id": "CONFIG-001",
-          "description": "Access-Control-Allow-Origin response header is set to \"*\". This will disable CORS Same Origin Policy restrictions."
-        },
-        {
-          "stage": "Session Exfiltration",
-          "finding_id": "DATA-002",
-          "description": "Raw HTTP client error object passed directly to logger"
-        }
-      ],
-      "narrative": "In component 'api', permissive CORS or cookie misconfigurations in CONFIG-001 allow malicious third-party web origins to read sensitive session data and authentication endpoints referenced in DATA-002.",
-      "remediation": "Restrict CORS allowed origins and set Secure and SameSite flags on session cookies.",
-      "mermaid": "graph LR\n    S1[\"CONFIG-001: Security Misconfiguration<br/><i>Access-Control-Allow-Origin response h</i>\"]\n    S2[\"DATA-002: Session Exfiltration<br/><i>Raw HTTP client error object passed di</i>\"]\n    S1 -->|enables| S2\n    S2 -->|Impact| Target[\"[api] Permissive Configuration to Cross-Origin Session Exfiltration\"]"
-    }
-  ],
+  "attack_chains": [],
   "findings": [
     {
       "id": "CICD-001",
@@ -245,276 +219,6 @@
       ],
       "owasp": [
         "A03 Injection"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-010",
-      "domain": "CICD",
-      "severity": "High",
-      "title": "This workflow uses `secrets: inherit` to pass all of the calling workflow's secrets to a reusable workflow. This violates the principle of least privilege becau",
-      "evidence": [
-        {
-          "file": ".github/workflows/merge.yml",
-          "line": 55,
-          "snippet": "[redacted: possible credential]"
-        }
-      ],
-      "impact": "This workflow uses `secrets: inherit` to pass all of the calling workflow's secrets to a reusable workflow. This violates the principle of least privilege because the called workflow receives access to every secret in the repository, not ju CWE: CWE-250",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.secrets-inherit.secrets-inherit: https://docs.github.com/en/actions/sharing-automations/reusing-workflows#passing-inputs-and-secrets-to-a-reusable-workflow",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-250"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-012",
-      "domain": "CICD",
-      "severity": "High",
-      "title": "This workflow uses `secrets: inherit` to pass all of the calling workflow's secrets to a reusable workflow. This violates the principle of least privilege becau",
-      "evidence": [
-        {
-          "file": ".github/workflows/pr-open.yml",
-          "line": 67,
-          "snippet": "[redacted: possible credential]"
-        }
-      ],
-      "impact": "This workflow uses `secrets: inherit` to pass all of the calling workflow's secrets to a reusable workflow. This violates the principle of least privilege because the called workflow receives access to every secret in the repository, not ju CWE: CWE-250",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.secrets-inherit.secrets-inherit: https://docs.github.com/en/actions/sharing-automations/reusing-workflows#passing-inputs-and-secrets-to-a-reusable-workflow",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-250"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-014",
-      "domain": "CICD",
-      "severity": "High",
-      "title": "This workflow uses `secrets: inherit` to pass all of the calling workflow's secrets to a reusable workflow. This violates the principle of least privilege becau",
-      "evidence": [
-        {
-          "file": ".github/workflows/release.yml",
-          "line": 52,
-          "snippet": "[redacted: possible credential]"
-        }
-      ],
-      "impact": "This workflow uses `secrets: inherit` to pass all of the calling workflow's secrets to a reusable workflow. This violates the principle of least privilege because the called workflow receives access to every secret in the repository, not ju CWE: CWE-250",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.secrets-inherit.secrets-inherit: https://docs.github.com/en/actions/sharing-automations/reusing-workflows#passing-inputs-and-secrets-to-a-reusable-workflow",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-250"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-002",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/.deploy.yml",
-          "line": 172,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-003",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/analysis.yml",
-          "line": 105,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-004",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/analysis.yml",
-          "line": 122,
-          "snippet": "uses: github/codeql-action/upload-sarif@v4"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-005",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/analysis.yml",
-          "line": 132,
-          "snippet": "uses: github/codeql-action/upload-sarif@v4"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-006",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/analysis.yml",
-          "line": 147,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-007",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/analysis.yml",
-          "line": 181,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-008",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/load.yml",
-          "line": 35,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-009",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/merge.yml",
-          "line": 30,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-011",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/pr-open.yml",
-          "line": 51,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
-      ],
-      "component": "root"
-    },
-    {
-      "id": "CICD-013",
-      "domain": "CICD",
-      "severity": "Medium",
-      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014",
-      "evidence": [
-        {
-          "file": ".github/workflows/release.yml",
-          "line": 26,
-          "snippet": "- uses: actions/checkout@v7"
-        }
-      ],
-      "impact": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the referen CWE: CWE-1357, CWE-353",
-      "recommendation": "Follow Semgrep rule guidance for yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-third-party-actions",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-1357",
-        "CWE-353"
       ],
       "component": "root"
     },
@@ -560,259 +264,6 @@
         "A01 Broken Access Control"
       ],
       "component": "api"
-    },
-    {
-      "id": "DATA-001",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "admin/src/app/analytics-dashboard/analytics-dashboard-data.service.ts",
-          "line": 61,
-          "snippet": "console.error(`Failed to fetch ${context}`, err);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "admin"
-    },
-    {
-      "id": "DATA-002",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "api/src/app/modules/attachment/attachment.service.ts",
-          "line": 225,
-          "snippet": "console.error(\"Unable to remove object: \", err);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "api"
-    },
-    {
-      "id": "DATA-003",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "api/src/app/modules/project/project.service.ts",
-          "line": 728,
-          "snippet": "this.logger.debug(`District lookup failed for ${districtId}: %o`, error);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "api"
-    },
-    {
-      "id": "DATA-004",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "api/src/core/security/auth.guard.ts",
-          "line": 86,
-          "snippet": "this.logger.warn(\"AuthGuard checks failed: %o\", err);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "auth-gateway"
-    },
-    {
-      "id": "DATA-005",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "api/src/main.ts",
-          "line": 41,
-          "snippet": "console.error('Error during database migration:', error);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "api"
-    },
-    {
-      "id": "DATA-006",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "api/src/main.ts",
-          "line": 134,
-          "snippet": "console.error('Error during post startup:', error);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "api"
-    },
-    {
-      "id": "DATA-007",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "api/src/main.ts",
-          "line": 150,
-          "snippet": "console.error('Error during application startup:', error);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "api"
-    },
-    {
-      "id": "DATA-008",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "api/src/main.ts",
-          "line": 166,
-          "snippet": "console.error('Error during batch execution:', error);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "api"
-    },
-    {
-      "id": "DATA-009",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "api/src/main.ts",
-          "line": 179,
-          "snippet": "console.error('Error during test data migration:', error);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "api"
-    },
-    {
-      "id": "DATA-010",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "public/src/app/applications/details-panel/details-panel.component.ts",
-          "line": 133,
-          "snippet": "console.error(err);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "public"
-    },
-    {
-      "id": "DATA-011",
-      "domain": "DATA",
-      "severity": "Medium",
-      "title": "Raw HTTP client error object passed directly to logger",
-      "evidence": [
-        {
-          "file": "public/src/app/applications/details-panel/details-panel.component.ts",
-          "line": 139,
-          "snippet": "console.error(err);"
-        }
-      ],
-      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-      "source": "semantic-analyzer",
-      "cwe": [
-        "CWE-532"
-      ],
-      "owasp": [
-        "A09 Security Logging and Monitoring Failures"
-      ],
-      "component": "public"
     },
     {
       "id": "DEPS-005",
@@ -1026,86 +477,6 @@
       "id": "INJ-001",
       "domain": "INJ",
       "severity": "Medium",
-      "title": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible.",
-      "evidence": [
-        {
-          "file": "admin/src/app/footer/footer.component.html",
-          "line": 7,
-          "snippet": "<li><a href=\"http://www2.gov.bc.ca/gov/content/home/copyright\" target=\"_blank\" rel=\"noopener\">Copyright</a></li>"
-        }
-      ],
-      "impact": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible. CWE: CWE-319",
-      "recommendation": "Follow Semgrep rule guidance for html.security.plaintext-http-link.plaintext-http-link: https://cwe.mitre.org/data/definitions/319.html",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-319"
-      ],
-      "component": "admin"
-    },
-    {
-      "id": "INJ-002",
-      "domain": "INJ",
-      "severity": "Medium",
-      "title": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible.",
-      "evidence": [
-        {
-          "file": "admin/src/app/footer/footer.component.html",
-          "line": 8,
-          "snippet": "<li><a href=\"http://www2.gov.bc.ca/gov/content/home/disclaimer\" target=\"_blank\" rel=\"noopener\">Disclaimer</a></li>"
-        }
-      ],
-      "impact": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible. CWE: CWE-319",
-      "recommendation": "Follow Semgrep rule guidance for html.security.plaintext-http-link.plaintext-http-link: https://cwe.mitre.org/data/definitions/319.html",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-319"
-      ],
-      "component": "admin"
-    },
-    {
-      "id": "INJ-003",
-      "domain": "INJ",
-      "severity": "Medium",
-      "title": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible.",
-      "evidence": [
-        {
-          "file": "admin/src/app/footer/footer.component.html",
-          "line": 9,
-          "snippet": "<li><a href=\"http://www2.gov.bc.ca/gov/content/home/privacy\" target=\"_blank\" rel=\"noopener\">Privacy</a></li>"
-        }
-      ],
-      "impact": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible. CWE: CWE-319",
-      "recommendation": "Follow Semgrep rule guidance for html.security.plaintext-http-link.plaintext-http-link: https://cwe.mitre.org/data/definitions/319.html",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-319"
-      ],
-      "component": "admin"
-    },
-    {
-      "id": "INJ-004",
-      "domain": "INJ",
-      "severity": "Medium",
-      "title": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible.",
-      "evidence": [
-        {
-          "file": "admin/src/app/footer/footer.component.html",
-          "line": 10,
-          "snippet": "<li><a href=\"http://www2.gov.bc.ca/gov/content/home/accessibility\" target=\"_blank\" rel=\"noopener\">Accessibility</a></li>"
-        }
-      ],
-      "impact": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible. CWE: CWE-319",
-      "recommendation": "Follow Semgrep rule guidance for html.security.plaintext-http-link.plaintext-http-link: https://cwe.mitre.org/data/definitions/319.html",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-319"
-      ],
-      "component": "admin"
-    },
-    {
-      "id": "INJ-005",
-      "domain": "INJ",
-      "severity": "Medium",
       "title": "RegExp() called with a `envName` function argument, this might allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) within your application",
       "evidence": [
         {
@@ -1126,7 +497,7 @@
       "component": "api"
     },
     {
-      "id": "INJ-006",
+      "id": "INJ-002",
       "domain": "INJ",
       "severity": "Medium",
       "title": "Depending on the context, user control data in `Object.assign` can cause web response to include data that it should not have or can lead to a mass assignment v",
@@ -1144,86 +515,6 @@
         "CWE-601"
       ],
       "component": "libs"
-    },
-    {
-      "id": "INJ-007",
-      "domain": "INJ",
-      "severity": "Medium",
-      "title": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible.",
-      "evidence": [
-        {
-          "file": "public/src/app/footer/footer.component.html",
-          "line": 8,
-          "snippet": "<li><a href=\"http://www2.gov.bc.ca/gov/content/home/copyright\" target=\"_blank\" rel=\"noopener\">Copyright</a></li>"
-        }
-      ],
-      "impact": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible. CWE: CWE-319",
-      "recommendation": "Follow Semgrep rule guidance for html.security.plaintext-http-link.plaintext-http-link: https://cwe.mitre.org/data/definitions/319.html",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-319"
-      ],
-      "component": "public"
-    },
-    {
-      "id": "INJ-008",
-      "domain": "INJ",
-      "severity": "Medium",
-      "title": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible.",
-      "evidence": [
-        {
-          "file": "public/src/app/footer/footer.component.html",
-          "line": 9,
-          "snippet": "<li><a href=\"http://www2.gov.bc.ca/gov/content/home/disclaimer\" target=\"_blank\" rel=\"noopener\">Disclaimer</a></li>"
-        }
-      ],
-      "impact": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible. CWE: CWE-319",
-      "recommendation": "Follow Semgrep rule guidance for html.security.plaintext-http-link.plaintext-http-link: https://cwe.mitre.org/data/definitions/319.html",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-319"
-      ],
-      "component": "public"
-    },
-    {
-      "id": "INJ-009",
-      "domain": "INJ",
-      "severity": "Medium",
-      "title": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible.",
-      "evidence": [
-        {
-          "file": "public/src/app/footer/footer.component.html",
-          "line": 10,
-          "snippet": "<li><a href=\"http://www2.gov.bc.ca/gov/content/home/privacy\" target=\"_blank\" rel=\"noopener\">Privacy</a></li>"
-        }
-      ],
-      "impact": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible. CWE: CWE-319",
-      "recommendation": "Follow Semgrep rule guidance for html.security.plaintext-http-link.plaintext-http-link: https://cwe.mitre.org/data/definitions/319.html",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-319"
-      ],
-      "component": "public"
-    },
-    {
-      "id": "INJ-010",
-      "domain": "INJ",
-      "severity": "Medium",
-      "title": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible.",
-      "evidence": [
-        {
-          "file": "public/src/app/footer/footer.component.html",
-          "line": 11,
-          "snippet": "<li><a href=\"http://www2.gov.bc.ca/gov/content/home/accessibility\" target=\"_blank\" rel=\"noopener\">Accessibility</a></li>"
-        }
-      ],
-      "impact": "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible. CWE: CWE-319",
-      "recommendation": "Follow Semgrep rule guidance for html.security.plaintext-http-link.plaintext-http-link: https://cwe.mitre.org/data/definitions/319.html",
-      "source": "semgrep",
-      "cwe": [
-        "CWE-319"
-      ],
-      "component": "public"
     },
     {
       "id": "DEPS-001",
@@ -1384,22 +675,9 @@
     {
       "id": "cicd",
       "status": "analyzed",
-      "note": "Reviewed 8 GitHub workflow file(s) under .github/workflows; 14 supply-chain/workflow finding(s) from scanners.",
+      "note": "Reviewed 8 GitHub workflow file(s) under .github/workflows; 1 supply-chain/workflow finding(s) from scanners.",
       "finding_ids": [
-        "CICD-001",
-        "CICD-010",
-        "CICD-012",
-        "CICD-014",
-        "CICD-002",
-        "CICD-003",
-        "CICD-004",
-        "CICD-005",
-        "CICD-006",
-        "CICD-007",
-        "CICD-008",
-        "CICD-009",
-        "CICD-011",
-        "CICD-013"
+        "CICD-001"
       ],
       "evidence": []
     },
@@ -1409,13 +687,13 @@
       "note": "Mapped 8 Critical/High/Medium finding(s) to Verify Explicitly / Least Privilege / Assume Breach themes from scanner output.",
       "finding_ids": [
         "CICD-001",
-        "CICD-010",
-        "CICD-012",
-        "CICD-014",
-        "CICD-002",
-        "CICD-003",
-        "CICD-004",
-        "CICD-005"
+        "CONFIG-001",
+        "DEPS-005",
+        "DEPS-006",
+        "INFRA-001",
+        "INFRA-002",
+        "INFRA-003",
+        "INFRA-004"
       ],
       "evidence": []
     },
@@ -1459,18 +737,10 @@
     {
       "id": "injection",
       "status": "analyzed",
-      "note": "Semgrep 1.184.0 ran with 34 result(s). scanned 659 path(s). 10 injection-domain finding(s) promoted.",
+      "note": "Semgrep 1.184.0 ran with 34 result(s). scanned 660 path(s). 2 injection-domain finding(s) promoted.",
       "finding_ids": [
         "INJ-001",
-        "INJ-002",
-        "INJ-003",
-        "INJ-004",
-        "INJ-005",
-        "INJ-006",
-        "INJ-007",
-        "INJ-008",
-        "INJ-009",
-        "INJ-010"
+        "INJ-002"
       ],
       "evidence": []
     },
@@ -1508,47 +778,33 @@
     {
       "id": "logging-data",
       "status": "analyzed",
-      "note": "Logging/PII semantic and scanner hits: 11. Review checked client error logging and credential leaks.",
-      "finding_ids": [
-        "DATA-001",
-        "DATA-002",
-        "DATA-003",
-        "DATA-004",
-        "DATA-005",
-        "DATA-006",
-        "DATA-007",
-        "DATA-008",
-        "DATA-009",
-        "DATA-010",
-        "DATA-011"
-      ],
-      "evidence": []
+      "note": "Logging/PII semantic and scanner hits: 0. Review checked client error logging and credential leaks.",
+      "finding_ids": [],
+      "evidence": [
+        {
+          "file": "README.md",
+          "line": 1
+        }
+      ]
     },
     {
       "id": "code-scanning",
       "status": "analyzed",
-      "note": "Semgrep 1.184.0 ran with 34 result(s). scanned 659 path(s). Public proxy for GitHub code-scanning until #96. GitHub's own alert list was not read (403/unavailable).",
+      "note": "Semgrep 1.184.0 ran with 34 result(s). scanned 660 path(s). Public proxy for GitHub code-scanning until #96. GitHub's own alert list was not read (403/unavailable).",
       "finding_ids": [
         "CICD-001",
-        "CICD-010",
-        "CICD-012",
-        "CICD-014",
-        "CICD-002",
-        "CICD-003",
-        "CICD-004",
-        "CICD-005",
-        "CICD-006",
-        "CICD-007",
-        "CICD-008",
-        "CICD-009",
-        "CICD-011",
-        "CICD-013",
         "CONFIG-001",
         "CRYPTO-002",
         "INFRA-001",
         "INFRA-002",
         "INFRA-003",
-        "INFRA-004"
+        "INFRA-004",
+        "INFRA-005",
+        "INFRA-006",
+        "INFRA-007",
+        "INFRA-008",
+        "INJ-001",
+        "INJ-002"
       ],
       "evidence": []
     },
@@ -1650,7 +906,7 @@
       "ok": true,
       "version": "1.184.0",
       "count": 34,
-      "detail": "scanned 659 path(s)"
+      "detail": "scanned 660 path(s)"
     },
     "gitleaks": {
       "ok": true,

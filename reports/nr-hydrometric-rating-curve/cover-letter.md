@@ -2,7 +2,7 @@
 
 This digest summarizes the scripted security assessment for `bcgov/nr-hydrometric-rating-curve`. The source of truth is the compiled report at [security-assessment.md](security-assessment.md).
 
-Open findings: 36 (Critical 0, High 8, Medium 20, Low 8); confirmed-fixed: 0. Chapters analyzed: 17; not_assessed: 0.
+Open findings: 24 (Critical 0, High 8, Medium 8, Low 8); confirmed-fixed: 0. Chapters analyzed: 17; not_assessed: 0.
 
 Highest-priority items (by severity order in findings.json):
 - AUTHZ-001 (High): Unprotected mutating Django view function: rctool_import
