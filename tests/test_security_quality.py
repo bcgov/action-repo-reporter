@@ -983,5 +983,249 @@ class SemanticAnalyzersTests(unittest.TestCase):
             self.assertEqual([], errors)
 
 
+class ReachabilityAndAttackChainingTests(unittest.TestCase):
+    def load_modules(self):
+        spec_rc = importlib.util.spec_from_file_location("rc", ROOT / "scripts/analyze-reachability-and-chains.py")
+        mod_rc = importlib.util.module_from_spec(spec_rc)
+        spec_rc.loader.exec_module(mod_rc)
+
+        spec_cf = importlib.util.spec_from_file_location("cf", ROOT / "scripts/compile-findings.py")
+        mod_cf = importlib.util.module_from_spec(spec_cf)
+        spec_cf.loader.exec_module(mod_cf)
+
+        spec_vc = importlib.util.spec_from_file_location("vc", ROOT / "scripts/validate-chapters.py")
+        mod_vc = importlib.util.module_from_spec(spec_vc)
+        spec_vc.loader.exec_module(mod_vc)
+
+        spec_rr = importlib.util.spec_from_file_location("rr", ROOT / "scripts/render-report.py")
+        mod_rr = importlib.util.module_from_spec(spec_rr)
+        spec_rr.loader.exec_module(mod_rr)
+
+        spec_ds = importlib.util.spec_from_file_location("ds", ROOT / "scripts/render-dashboard-summary.py")
+        mod_ds = importlib.util.module_from_spec(spec_ds)
+        spec_ds.loader.exec_module(mod_ds)
+        return mod_rc, mod_cf, mod_vc, mod_rr, mod_ds
+
+    def test_import_extraction_js_ts_and_python(self):
+        rc, _, _, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+
+            # JS/TS files
+            src = t / "src"
+            src.mkdir()
+            (src / "app.ts").write_text(
+                "import { get } from 'lodash';\n"
+                "import express from 'express';\n"
+                "import { Controller } from '@nestjs/common';\n"
+                "const axios = require('axios');\n"
+                "import('dotenv/config');\n"
+            )
+
+            # Python file
+            (src / "worker.py").write_text(
+                "import yaml\n"
+                "from pyjwt import decode\n"
+                "from dateutil.parser import parse\n"
+            )
+
+            # Ignored paths (e.g. tests or node_modules)
+            ignored = t / "tests"
+            ignored.mkdir()
+            (ignored / "app.test.ts").write_text("import supertest from 'supertest';\n")
+
+            imported = rc.extract_imported_packages(t)
+            # Check lodash, express, @nestjs/common, axios, dotenv
+            self.assertIn("lodash", imported)
+            self.assertIn("express", imported)
+            self.assertIn("@nestjs/common", imported)
+            self.assertIn("@nestjs", imported)
+            self.assertIn("axios", imported)
+            self.assertIn("dotenv", imported)
+
+            # Check Python imports and aliases
+            self.assertIn("yaml", imported)
+            self.assertIn("pyyaml", imported)
+            self.assertIn("pyjwt", imported)
+            self.assertIn("dateutil", imported)
+            self.assertIn("python-dateutil", imported)
+
+            # supertest from ignored dir should NOT be in imported
+            self.assertNotIn("supertest", imported)
+
+    def test_reachability_vex_tagging(self):
+        rc, _, _, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            (t / "index.ts").write_text("import express from 'express';\n")
+
+            findings = [
+                {
+                    "id": "DEP-001",
+                    "domain": "dependencies",
+                    "package": "express",
+                    "title": "express 4.16.0 affected by CVE-2022-24999",
+                    "severity": "High",
+                },
+                {
+                    "id": "DEP-002",
+                    "domain": "dependencies",
+                    "package": "uncalled-transitive-pkg",
+                    "title": "uncalled-transitive-pkg 1.0.0 affected by CVE-2023-1111",
+                    "severity": "High",
+                },
+            ]
+
+            assessed, summary = rc.assess_reachability(t, findings)
+            self.assertEqual(2, summary["total_dependency_findings"])
+            self.assertEqual(1, summary["reachable_findings"])
+            self.assertEqual(1, summary["unreachable_findings"])
+            self.assertEqual(["express"], summary["reachable_packages"])
+            self.assertEqual(["uncalled-transitive-pkg"], summary["unreachable_packages"])
+
+            # Reachable finding checks
+            f1 = next(f for f in assessed if f["id"] == "DEP-001")
+            self.assertEqual("reachable", f1["reachability"])
+            self.assertEqual("affected", f1["vex_status"])
+            self.assertIn("Directly imported", f1["vex_justification"])
+            self.assertEqual("High", f1["severity"])
+
+            # Unreachable finding checks
+            f2 = next(f for f in assessed if f["id"] == "DEP-002")
+            self.assertEqual("unreachable", f2["reachability"])
+            self.assertEqual("not_affected", f2["vex_status"])
+            self.assertIn("not_in_execute_path", f2["vex_justification"])
+            self.assertEqual("Low", f2["effective_severity"])
+
+    def test_correlate_attack_chains_scenarios(self):
+        rc, _, _, _, _ = self.load_modules()
+
+        findings = [
+            # Scenario 1: DATA + AUTHZ
+            {"id": "DATA-001", "domain": "logging-data", "title": "Sensitive token logged to console", "severity": "High"},
+            {"id": "AUTHZ-001", "domain": "authz", "title": "Unprotected mutating endpoint @Post('admin')", "severity": "High"},
+            # Scenario 2: AUTHN fallback + CRYPTO
+            {"id": "AUTHN-001", "domain": "authn", "title": "Hardcoded JWT secret fallback in auth service", "severity": "High"},
+            {"id": "CRYPTO-001", "domain": "cryptography", "title": "Insecure non-constant-time token verify", "severity": "Medium"},
+            # Scenario 3: Reachable DEPS + SECRETS
+            {"id": "DEP-001", "domain": "dependencies", "title": "lodash 4.17.15: Prototype pollution", "reachability": "reachable", "severity": "High"},
+            {"id": "SEC-001", "domain": "secrets", "title": "Gitleaks API key in git history", "severity": "High"},
+            # Scenario 4: CONFIG + AUTHN
+            {"id": "CFG-001", "domain": "configuration", "title": "Permissive CORS origin wildcard *", "severity": "Medium"},
+        ]
+
+        chains = rc.correlate_attack_chains(findings)
+        self.assertGreaterEqual(len(chains), 3)
+
+        titles = [c["title"] for c in chains]
+        self.assertTrue(any("Credential Disclosure" in t for t in titles))
+        self.assertTrue(any("Hardcoded Secret Fallback" in t for t in titles))
+        self.assertTrue(any("Reachable Component Flaw" in t for t in titles))
+        self.assertTrue(any("Permissive Configuration" in t for t in titles))
+
+        for chain in chains:
+            self.assertIn("id", chain)
+            self.assertIn("severity", chain)
+            self.assertIn("narrative", chain)
+            self.assertIn("remediation", chain)
+            self.assertIn("mermaid", chain)
+            self.assertTrue(chain["mermaid"].startswith("graph LR"))
+
+    def test_end_to_end_compiler_and_report_integration(self):
+        rc, cf, vc, rr, ds = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            target = tmp_path / "target"
+            target.mkdir()
+            evidence = tmp_path / "evidence"
+            evidence.mkdir()
+
+            # Create basic target structure
+            (target / "README.md").write_text("# Demo Project\nArchitecture info.\n")
+            (target / "package.json").write_text('{"name": "demo", "engines": {"node": ">=20"}}')
+            (target / "package-lock.json").write_text('{\n  "name": "demo",\n  "packages": {\n    "node_modules/lodash": {\n      "version": "4.17.15"\n    }\n  }\n}\n')
+            (target / ".github" / "workflows").mkdir(parents=True)
+            (target / ".github" / "workflows" / "ci.yml").write_text("name: CI\non: push\njobs: {}\n")
+
+            # Source code importing lodash
+            src = target / "src"
+            src.mkdir()
+            (src / "app.ts").write_text(
+                "import { merge } from 'lodash';\n"
+                "console.log('User bearer token:', token);\n"
+            )
+
+            # Evidence files
+            (evidence / "osv-scanner.json").write_text(json.dumps({
+                "results": [
+                    {
+                        "source": {"path": "package-lock.json", "type": "lockfile"},
+                        "packages": [
+                            {
+                                "package": {"name": "lodash", "version": "4.17.15"},
+                                "vulnerabilities": [
+                                    {
+                                        "id": "GHSA-p6mc-m468-83gw",
+                                        "summary": "Prototype Pollution in lodash",
+                                        "database_specific": {"severity": "High"},
+                                    }
+                                ]
+                            },
+                            {
+                                "package": {"name": "uncalled-dep", "version": "1.0.0"},
+                                "vulnerabilities": [
+                                    {
+                                        "id": "GHSA-uncalled-1111",
+                                        "summary": "Flaw in uncalled-dep",
+                                        "database_specific": {"severity": "High"},
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }))
+            (evidence / "semgrep.json").write_text(json.dumps({"results": [], "paths": {"scanned": ["src/app.ts"]}}))
+            (evidence / "gitleaks.json").write_text(json.dumps([]))
+
+            compiler = cf.Compiler("bcgov/test-reachability", target, evidence)
+            data = compiler.run()
+
+            # Verify VEX summary
+            self.assertIn("vex_summary", data)
+            vex = data["vex_summary"]
+            self.assertEqual(2, vex["total_dependency_findings"])
+            self.assertEqual(1, vex["reachable_findings"])
+            self.assertEqual(1, vex["unreachable_findings"])
+            self.assertEqual(["lodash"], vex["reachable_packages"])
+
+            # Verify attack chains
+            self.assertIn("attack_chains", data)
+            chains = data["attack_chains"]
+            self.assertTrue(len(chains) >= 1)
+
+            # Verify report generation
+            md = rr.render(data)
+            self.assertIn("## Attack chains (exploit correlation)", md)
+            self.assertIn("### VEX Reachability Analysis", md)
+            self.assertIn("graph LR", md)
+            self.assertIn("VEX status: `affected`", md)
+            self.assertIn("VEX status: `not_affected`", md)
+
+            # Validate report against chapter substance gate
+            errors = vc.validate(data, md, target, evidence)
+            self.assertEqual([], errors)
+
+            # Test dashboard summary rendering
+            rep_dir = tmp_path / "reports"
+            target_rep = rep_dir / "target"
+            target_rep.mkdir(parents=True)
+            (target_rep / "findings.json").write_text(json.dumps(data))
+            (target_rep / "score.json").write_text(json.dumps({"score": 85, "counts": {"Critical": 0, "High": 2, "Medium": 0, "Low": 0}}))
+            dash_md = ds.render_dashboard(rep_dir)
+            self.assertIn("Exploit Attack Chains", dash_md)
+            self.assertIn("VEX Reachability", dash_md)
+
+
 if __name__ == "__main__":
     unittest.main()

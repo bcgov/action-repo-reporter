@@ -21,7 +21,8 @@ def valid(ev, root):
     if p != base and base not in p.parents or not p.is_file():
         return False
     try:
-        n = sum(1 for _ in p.open(errors="ignore"))
+        with p.open(errors="ignore") as fp:
+            n = sum(1 for _ in fp)
     except OSError:
         return False
     return isinstance(ev.get("line"), int) and 1 <= ev["line"] <= n
