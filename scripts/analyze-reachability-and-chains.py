@@ -9,19 +9,32 @@ multi-stage attack chains.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import pathlib
 import re
 from typing import Any
 
+SUPPORTED_LOCKFILES = {
+    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "requirements.txt",
+    "poetry.lock", "pipfile.lock", "pyproject.toml"
+}
+UNSUPPORTED_LOCKFILES = {
+    "go.mod", "go.sum", "cargo.lock", "composer.lock", "gemfile.lock"
+}
 
-def _is_ignored(path: pathlib.Path) -> bool:
+
+def _is_ignored(path: pathlib.Path, repo_dir: pathlib.Path) -> bool:
+    try:
+        rel_parts = path.relative_to(repo_dir).parts
+    except ValueError:
+        rel_parts = path.parts
     ignored_parts = {
         "node_modules", "dist", "build", ".git", ".next", ".nuxt",
         "coverage", "__pycache__", "venv", ".venv", "tests", "test",
         "spec", "e2e", "migrations", ".pytest_cache",
     }
-    return any(p in ignored_parts or p.startswith(".") for p in path.parts)
+    return any(p in ignored_parts or p.startswith(".") for p in rel_parts)
 
 
 def extract_imported_packages(repo_dir: pathlib.Path) -> dict[str, dict[str, Any]]:
@@ -29,7 +42,7 @@ def extract_imported_packages(repo_dir: pathlib.Path) -> dict[str, dict[str, Any
     packages: dict[str, dict[str, Any]] = {}
 
     js_import_re = re.compile(
-        r"""(?:import\s+(?:(?:[a-zA-Z0-9_{}\s*,*]+)\s+from\s+)?|require\s*\(\s*|import\s*\(\s*)['"]([^'"./][^'"]*)['"]"""
+        r"""(?:(?:import|export)\s+(?:(?:[a-zA-Z0-9_{}\s*,*]+)\s+from\s+|\*\s+as\s+[a-zA-Z0-9_]+\s+from\s+|\*\s+from\s+)?|require\s*\(\s*|import\s*\(\s*)['"]([^'"./][^'"]*)['"]"""
     )
     py_import_re = re.compile(
         r"""^\s*(?:import|from)\s+([a-zA-Z0-9_]+)""", re.MULTILINE
@@ -43,7 +56,7 @@ def extract_imported_packages(repo_dir: pathlib.Path) -> dict[str, dict[str, Any
     }
 
     for path in repo_dir.rglob("*"):
-        if _is_ignored(path) or path.is_symlink() or not path.is_file():
+        if _is_ignored(path, repo_dir) or path.is_symlink() or not path.is_file():
             continue
         suffix = path.suffix.lower()
         if suffix not in (".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs", ".py"):
@@ -55,11 +68,27 @@ def extract_imported_packages(repo_dir: pathlib.Path) -> dict[str, dict[str, Any
 
         rel = str(path.relative_to(repo_dir))
         if suffix == ".py":
-            for m in py_import_re.finditer(content):
-                mod = m.group(1).lower()
-                for pkg in {mod, py_alias_map.get(mod, mod)}:
-                    rec = packages.setdefault(pkg, {"files": set()})
-                    rec["files"].add(rel)
+            try:
+                tree = ast.parse(content, filename=str(path))
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            mod = alias.name.split(".")[0].lower()
+                            for pkg in {mod, py_alias_map.get(mod, mod)}:
+                                rec = packages.setdefault(pkg, {"files": set()})
+                                rec["files"].add(rel)
+                    elif isinstance(node, ast.ImportFrom):
+                        if node.module:
+                            mod = node.module.split(".")[0].lower()
+                            for pkg in {mod, py_alias_map.get(mod, mod)}:
+                                rec = packages.setdefault(pkg, {"files": set()})
+                                rec["files"].add(rel)
+            except SyntaxError:
+                for m in py_import_re.finditer(content):
+                    mod = m.group(1).lower()
+                    for pkg in {mod, py_alias_map.get(mod, mod)}:
+                        rec = packages.setdefault(pkg, {"files": set()})
+                        rec["files"].add(rel)
         else:
             for m in js_import_re.finditer(content):
                 raw = m.group(1)
@@ -68,15 +97,48 @@ def extract_imported_packages(repo_dir: pathlib.Path) -> dict[str, dict[str, Any
                 pkg_clean = pkg.lower()
                 rec = packages.setdefault(pkg_clean, {"files": set()})
                 rec["files"].add(rel)
-                # Also track top-level scope (e.g. '@nestjs' for '@nestjs/common')
-                if raw.startswith("@") and len(parts) > 1:
-                    packages.setdefault(parts[0].lower(), {"files": set()})["files"].add(rel)
 
-    # Convert sets to sorted lists for JSON serialization
     return {
         pkg: {"files": sorted(data["files"])}
         for pkg, data in sorted(packages.items())
     }
+
+
+def build_transitive_dependency_graph(repo_dir: pathlib.Path) -> dict[str, set[str]]:
+    """Map each parent package to the set of child packages it requires from lockfiles."""
+    graph: dict[str, set[str]] = {}
+    for lock_path in repo_dir.rglob("package-lock.json"):
+        if _is_ignored(lock_path, repo_dir):
+            continue
+        try:
+            data = json.loads(lock_path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        pkgs = data.get("packages") or {}
+        for p_path, p_info in pkgs.items():
+            if not isinstance(p_info, dict):
+                continue
+            name = p_info.get("name")
+            if not name and p_path.startswith("node_modules/"):
+                name = p_path.replace("node_modules/", "")
+            if not name:
+                continue
+            name_clean = name.lower()
+            deps = p_info.get("dependencies") or {}
+            for dep_name in deps:
+                graph.setdefault(name_clean, set()).add(dep_name.lower())
+        deps_v1 = data.get("dependencies") or {}
+        def _walk_v1(parent_name: str, obj: dict):
+            for child_name, child_info in (obj.get("dependencies") or {}).items():
+                graph.setdefault(parent_name.lower(), set()).add(child_name.lower())
+                if isinstance(child_info, dict):
+                    _walk_v1(child_name, child_info)
+        for p_name, p_info in deps_v1.items():
+            if isinstance(p_info, dict):
+                for dep_name in (p_info.get("requires") or {}).keys():
+                    graph.setdefault(p_name.lower(), set()).add(dep_name.lower())
+                _walk_v1(p_name, p_info)
+    return graph
 
 
 def _extract_package_name(finding: dict[str, Any]) -> str:
@@ -85,17 +147,24 @@ def _extract_package_name(finding: dict[str, Any]) -> str:
     if pkg and isinstance(pkg, str):
         return pkg.strip()
     title = finding.get("title", "")
-    # Title formats: "lodash 4.17.15 affected by CVE-..." or "lodash 4.17.15: ..." or "package: joi ..."
     m = re.match(r"^([a-zA-Z0-9@_./-]+)\s+[0-9v.]+(?::|\s+affected by)", title, re.I)
     if m:
         return m.group(1).strip()
     m2 = re.search(r"\b(?:package|module|library)\s+([a-zA-Z0-9@_./-]+)\b", title, re.I)
     if m2:
         return m2.group(1).strip()
-    # Match leading package name before colon: "express: prototype pollution"
     m3 = re.match(r"^([a-zA-Z0-9@_./-]+):", title)
     if m3:
         return m3.group(1).strip()
+    return ""
+
+
+def _finding_lockfile(finding: dict[str, Any]) -> str:
+    for ev in finding.get("evidence") or []:
+        if isinstance(ev, dict) and "file" in ev:
+            fn = pathlib.Path(ev["file"]).name.lower()
+            if fn in SUPPORTED_LOCKFILES or fn in UNSUPPORTED_LOCKFILES:
+                return fn
     return ""
 
 
@@ -106,9 +175,24 @@ def assess_reachability(
     """Assess whether dependency vulnerability findings are imported/callable in source."""
     imported_map = extract_imported_packages(repo_dir)
     imported_names = set(imported_map.keys())
+    dep_graph = build_transitive_dependency_graph(repo_dir)
+
+    # Compute transitive closure of imported packages
+    transitive_callers: dict[str, str] = {}
+    for imp in imported_names:
+        queue = [imp]
+        visited = {imp}
+        while queue:
+            curr = queue.pop(0)
+            for child in dep_graph.get(curr, set()):
+                if child not in visited:
+                    visited.add(child)
+                    transitive_callers.setdefault(child, imp)
+                    queue.append(child)
 
     reachable_pkgs = set()
     unreachable_pkgs = set()
+    unassessed_pkgs = set()
     total_dep_findings = 0
     reachable_findings_count = 0
 
@@ -118,6 +202,14 @@ def assess_reachability(
             continue
 
         total_dep_findings += 1
+        lock = _finding_lockfile(f)
+        if lock in UNSUPPORTED_LOCKFILES:
+            f["reachability"] = "unassessed"
+            f["vex_status"] = "under_investigation"
+            f["vex_justification"] = f"Ecosystem reachability analyzer not available for {lock}; original severity preserved."
+            unassessed_pkgs.add(_extract_package_name(f).lower() or lock)
+            continue
+
         pkg_name = _extract_package_name(f).lower()
         if not pkg_name:
             f["reachability"] = "reachable"
@@ -126,13 +218,7 @@ def assess_reachability(
             reachable_findings_count += 1
             continue
 
-        # Check direct or scope match
-        is_imported = (
-            pkg_name in imported_names
-            or any(pkg_name.startswith(f"{imp}/") or imp.startswith(f"{pkg_name}/") for imp in imported_names)
-        )
-
-        if is_imported:
+        if pkg_name in imported_names:
             import_info = imported_map.get(pkg_name) or {}
             cites = import_info.get("files", [])
             f["reachability"] = "reachable"
@@ -140,19 +226,30 @@ def assess_reachability(
             f["vex_justification"] = f"Directly imported in application code ({len(cites)} file(s))."
             reachable_pkgs.add(pkg_name)
             reachable_findings_count += 1
+        elif pkg_name in transitive_callers:
+            parent = transitive_callers[pkg_name]
+            f["reachability"] = "reachable"
+            f["vex_status"] = "affected"
+            f["vex_justification"] = f"Transitively reachable via imported package '{parent}'."
+            reachable_pkgs.add(pkg_name)
+            reachable_findings_count += 1
         else:
             f["reachability"] = "unreachable"
             f["vex_status"] = "not_affected"
-            f["vex_justification"] = "vulnerable_code_not_in_execute_path (unimported transitive dependency)"
+            f["vex_justification"] = "vulnerable_code_not_in_execute_path (unimported transitive dependency with no imported parent callers)"
+            f["original_severity"] = f.get("severity")
+            f["severity"] = "Low"
             f["effective_severity"] = "Low"
             unreachable_pkgs.add(pkg_name)
 
     summary = {
         "total_dependency_findings": total_dep_findings,
         "reachable_findings": reachable_findings_count,
-        "unreachable_findings": total_dep_findings - reachable_findings_count,
+        "unreachable_findings": len(unreachable_pkgs),
+        "unassessed_findings": len(unassessed_pkgs),
         "reachable_packages": sorted(reachable_pkgs),
         "unreachable_packages": sorted(unreachable_pkgs),
+        "unassessed_packages": sorted(unassessed_pkgs),
     }
 
     return findings, summary
@@ -176,161 +273,190 @@ def generate_chain_mermaid(chain: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _has_execution_capability(finding: dict[str, Any]) -> bool:
+    text = f"{finding.get('title', '')} {finding.get('impact', '')}".lower()
+    exec_cwes = {"cwe-94", "cwe-78", "cwe-1321", "cwe-502", "cwe-119", "cwe-120", "cwe-77", "cwe-88"}
+    has_cwe = any(c.lower() in exec_cwes for c in (finding.get("cwe") or []))
+    exec_keywords = (
+        "prototype pollution", "remote code", "command injection",
+        "code execution", "arbitrary code", "deserialization", "eval", "rce"
+    )
+    return has_cwe or any(kw in text for kw in exec_keywords)
+
+
+def _is_permissive_cors_or_session(finding: dict[str, Any]) -> bool:
+    text = f"{finding.get('title', '')} {finding.get('impact', '')}".lower()
+    return (
+        "cors" in text or "access-control-allow-origin" in text or
+        "samesite" in text or ("cookie" in text and "secure" in text)
+    )
+
+
 def correlate_attack_chains(
     findings: list[dict[str, Any]],
     components: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Identify plausible multi-stage attack scenarios across findings."""
+    """Identify plausible multi-stage attack scenarios across findings within compatible components."""
     chains: list[dict[str, Any]] = []
 
-    by_domain: dict[str, list[dict[str, Any]]] = {}
+    # Group findings by component
+    by_comp: dict[str, dict[str, list[dict[str, Any]]]] = {}
     for f in findings:
+        cid = f.get("component") or "root"
         d = f.get("domain", "").lower()
-        by_domain.setdefault(d, []).append(f)
+        by_comp.setdefault(cid, {}).setdefault(d, []).append(f)
 
-    # 1. Credential / Log Leak -> Unprotected Mutating Endpoint
-    leaks = by_domain.get("logging-data", []) + by_domain.get("data", []) + by_domain.get("secrets", [])
-    authz = by_domain.get("authz", [])
-    if leaks and authz:
-        l_f = leaks[0]
-        a_f = authz[0]
-        chain = {
-            "id": f"CHAIN-{len(chains)+1:03d}",
-            "title": "Credential Disclosure to Unauthorized State Mutation",
-            "severity": "Critical",
-            "findings": [l_f["id"], a_f["id"]],
-            "stages": [
-                {
-                    "stage": "Credential Harvesting",
-                    "finding_id": l_f["id"],
-                    "description": l_f.get("title", ""),
-                },
-                {
-                    "stage": "Privilege Exploitation",
-                    "finding_id": a_f["id"],
-                    "description": a_f.get("title", ""),
-                },
-            ],
-            "narrative": (
-                f"An attacker harvesting leaked authorization tokens or credentials via {l_f['id']} "
-                f"can immediately execute state-changing actions via unguarded mutating endpoint {a_f['id']} "
-                "without triggering access control defenses."
-            ),
-            "remediation": "Redact sensitive log outputs and enforce controller/route guard decorators.",
-        }
-        chain["mermaid"] = generate_chain_mermaid(chain)
-        chains.append(chain)
+    for cid, by_domain in by_comp.items():
+        # 1. Credential / Log Leak -> Unprotected Mutating Endpoint
+        leaks = by_domain.get("logging-data", []) + by_domain.get("data", []) + by_domain.get("secrets", [])
+        authz = by_domain.get("authz", [])
+        if leaks and authz:
+            l_f = leaks[0]
+            a_f = authz[0]
+            chain = {
+                "id": f"CHAIN-{len(chains)+1:03d}",
+                "title": f"[{cid}] Credential Disclosure to Unauthorized State Mutation",
+                "severity": "Critical",
+                "component": cid,
+                "findings": [l_f["id"], a_f["id"]],
+                "stages": [
+                    {
+                        "stage": "Credential Harvesting",
+                        "finding_id": l_f["id"],
+                        "description": l_f.get("title", ""),
+                    },
+                    {
+                        "stage": "Privilege Exploitation",
+                        "finding_id": a_f["id"],
+                        "description": a_f.get("title", ""),
+                    },
+                ],
+                "narrative": (
+                    f"In component '{cid}', an attacker harvesting leaked authorization tokens or credentials via {l_f['id']} "
+                    f"can execute state-changing actions via unguarded mutating endpoint {a_f['id']} "
+                    "without triggering access control defenses."
+                ),
+                "remediation": "Redact sensitive log outputs and enforce controller/route guard decorators.",
+            }
+            chain["mermaid"] = generate_chain_mermaid(chain)
+            chains.append(chain)
 
-    # 2. Hardcoded Secret Fallback -> Token Forgery & Auth Bypass
-    auth_fallbacks = [
-        f for f in (by_domain.get("authn", []) + by_domain.get("auth", []))
-        if any(term in f.get("title", "").lower() for term in ("fallback secret", "hardcoded", "fallback"))
-    ]
-    crypto_issues = by_domain.get("cryptography", []) + by_domain.get("crypto", []) + [
-        f for f in (by_domain.get("authn", []) + by_domain.get("auth", []))
-        if any(term in f.get("title", "").lower() for term in ("constant-time", "verify", "algorithm"))
-    ]
-    if auth_fallbacks and crypto_issues:
-        af = auth_fallbacks[0]
-        cf = crypto_issues[0]
-        chain = {
-            "id": f"CHAIN-{len(chains)+1:03d}",
-            "title": "Hardcoded Secret Fallback to Administrative Token Forgery",
-            "severity": "Critical",
-            "findings": [af["id"], cf["id"]],
-            "stages": [
-                {
-                    "stage": "Key Derivation",
-                    "finding_id": af["id"],
-                    "description": af.get("title", ""),
-                },
-                {
-                    "stage": "Authentication Forgery",
-                    "finding_id": cf["id"],
-                    "description": cf.get("title", ""),
-                },
-            ],
-            "narrative": (
-                f"When deployed with missing environment configurations, the application defaults to {af['id']}, "
-                f"allowing attackers to forge valid JWT signatures and bypass verification checks in {cf['id']}."
-            ),
-            "remediation": "Fail closed at startup on missing secrets and enforce constant-time signature verification.",
-        }
-        chain["mermaid"] = generate_chain_mermaid(chain)
-        chains.append(chain)
+        # 2. Hardcoded Secret Fallback -> Token Forgery & Auth Bypass
+        auth_fallbacks = [
+            f for f in (by_domain.get("authn", []) + by_domain.get("auth", []))
+            if any(term in f.get("title", "").lower() for term in ("fallback secret", "hardcoded", "fallback"))
+        ]
+        crypto_issues = by_domain.get("cryptography", []) + by_domain.get("crypto", []) + [
+            f for f in (by_domain.get("authn", []) + by_domain.get("auth", []))
+            if any(term in f.get("title", "").lower() for term in ("constant-time", "verify", "algorithm"))
+        ]
+        if auth_fallbacks and crypto_issues:
+            af = auth_fallbacks[0]
+            cf = crypto_issues[0]
+            chain = {
+                "id": f"CHAIN-{len(chains)+1:03d}",
+                "title": f"[{cid}] Hardcoded Secret Fallback to Administrative Token Forgery",
+                "severity": "Critical",
+                "component": cid,
+                "findings": [af["id"], cf["id"]],
+                "stages": [
+                    {
+                        "stage": "Key Derivation",
+                        "finding_id": af["id"],
+                        "description": af.get("title", ""),
+                    },
+                    {
+                        "stage": "Authentication Forgery",
+                        "finding_id": cf["id"],
+                        "description": cf.get("title", ""),
+                    },
+                ],
+                "narrative": (
+                    f"In component '{cid}', when deployed with missing environment configurations, the application defaults to {af['id']}, "
+                    f"allowing attackers to forge valid JWT signatures and bypass verification checks in {cf['id']}."
+                ),
+                "remediation": "Fail closed at startup on missing secrets and enforce constant-time signature verification.",
+            }
+            chain["mermaid"] = generate_chain_mermaid(chain)
+            chains.append(chain)
 
-    # 3. Reachable Vulnerable Dependency -> Secrets Extraction
-    reachable_deps = [
-        f for f in (by_domain.get("dependencies", []) + by_domain.get("deps", []) + by_domain.get("dependabot", []))
-        if f.get("reachability") == "reachable"
-    ] or (by_domain.get("injection", []) + by_domain.get("inj", []))
-    credential_findings = by_domain.get("secrets", []) + by_domain.get("logging-data", []) + by_domain.get("data", [])
-    if reachable_deps and credential_findings:
-        dep = reachable_deps[0]
-        cred_finding = credential_findings[0]
-        chain = {
-            "id": f"CHAIN-{len(chains)+1:03d}",
-            "title": "Reachable Component Flaw to Secret Exfiltration",
-            "severity": "High",
-            "findings": [dep["id"], cred_finding["id"]],
-            "stages": [
-                {
-                    "stage": "Library Exploitation",
-                    "finding_id": dep["id"],
-                    "description": dep.get("title", ""),
-                },
-                {
-                    "stage": "Secret Exfiltration",
-                    "finding_id": cred_finding["id"],
-                    "description": cred_finding.get("title", ""),
-                },
-            ],
-            "narrative": (
-                f"Exploiting reachable dependency vulnerability {dep['id']} grants memory or execution access "
-                f"within the container context, leading to extraction of credentials identified in {cred_finding['id']}."
-            ),
-            "remediation": "Upgrade the reachable dependency and rotate the exposed credentials.",
-        }
-        chain["mermaid"] = generate_chain_mermaid(chain)
-        chains.append(chain)
+        # 3. Reachable Vulnerable Dependency with Code Execution -> Secret Exfiltration
+        reachable_deps = [
+            f for f in (by_domain.get("dependencies", []) + by_domain.get("deps", []) + by_domain.get("dependabot", []))
+            if f.get("reachability") == "reachable" and _has_execution_capability(f)
+        ] or [
+            f for f in (by_domain.get("injection", []) + by_domain.get("inj", []))
+            if _has_execution_capability(f)
+        ]
+        credential_findings = by_domain.get("secrets", []) + by_domain.get("logging-data", []) + by_domain.get("data", [])
+        if reachable_deps and credential_findings:
+            dep = reachable_deps[0]
+            cred_finding = credential_findings[0]
+            chain = {
+                "id": f"CHAIN-{len(chains)+1:03d}",
+                "title": f"[{cid}] Reachable Component Flaw to Secret Exfiltration",
+                "severity": "High",
+                "component": cid,
+                "findings": [dep["id"], cred_finding["id"]],
+                "stages": [
+                    {
+                        "stage": "Library Exploitation",
+                        "finding_id": dep["id"],
+                        "description": dep.get("title", ""),
+                    },
+                    {
+                        "stage": "Secret Exfiltration",
+                        "finding_id": cred_finding["id"],
+                        "description": cred_finding.get("title", ""),
+                    },
+                ],
+                "narrative": (
+                    f"In component '{cid}', exploiting reachable dependency vulnerability {dep['id']} grants code execution access "
+                    f"within the container context, leading to extraction of credentials identified in {cred_finding['id']}."
+                ),
+                "remediation": "Upgrade the reachable dependency and rotate the exposed credentials.",
+            }
+            chain["mermaid"] = generate_chain_mermaid(chain)
+            chains.append(chain)
 
-    # 4. Security Misconfiguration -> Cross-Origin Session Exfiltration
-    config_issues = [
-        f for f in (by_domain.get("configuration", []) + by_domain.get("config", []))
-        if any(term in f.get("title", "").lower() for term in ("cors", "cookie", "header", "debug"))
-    ]
-    auth_sessions = (
-        by_domain.get("authn", []) + by_domain.get("auth", []) +
-        by_domain.get("logging-data", []) + by_domain.get("data", [])
-    )
-    if config_issues and auth_sessions:
-        cfg = config_issues[0]
-        sess = auth_sessions[0]
-        chain = {
-            "id": f"CHAIN-{len(chains)+1:03d}",
-            "title": "Permissive Configuration to Cross-Origin Session Exfiltration",
-            "severity": "High",
-            "findings": [cfg["id"], sess["id"]],
-            "stages": [
-                {
-                    "stage": "Security Misconfiguration",
-                    "finding_id": cfg["id"],
-                    "description": cfg.get("title", ""),
-                },
-                {
-                    "stage": "Session Exfiltration",
-                    "finding_id": sess["id"],
-                    "description": sess.get("title", ""),
-                },
-            ],
-            "narrative": (
-                f"Permissive CORS or cookie misconfigurations in {cfg['id']} allow malicious third-party web origins "
-                f"to read sensitive session data and authentication endpoints referenced in {sess['id']}."
-            ),
-            "remediation": "Restrict CORS allowed origins and set Secure and SameSite flags on session cookies.",
-        }
-        chain["mermaid"] = generate_chain_mermaid(chain)
-        chains.append(chain)
+        # 4. Security Misconfiguration (CORS/Cookie) -> Cross-Origin Session Exfiltration
+        config_issues = [
+            f for f in (by_domain.get("configuration", []) + by_domain.get("config", []))
+            if _is_permissive_cors_or_session(f)
+        ]
+        auth_sessions = (
+            by_domain.get("authn", []) + by_domain.get("auth", []) +
+            by_domain.get("logging-data", []) + by_domain.get("data", [])
+        )
+        if config_issues and auth_sessions:
+            cfg = config_issues[0]
+            sess = auth_sessions[0]
+            chain = {
+                "id": f"CHAIN-{len(chains)+1:03d}",
+                "title": f"[{cid}] Permissive Configuration to Cross-Origin Session Exfiltration",
+                "severity": "High",
+                "component": cid,
+                "findings": [cfg["id"], sess["id"]],
+                "stages": [
+                    {
+                        "stage": "Security Misconfiguration",
+                        "finding_id": cfg["id"],
+                        "description": cfg.get("title", ""),
+                    },
+                    {
+                        "stage": "Session Exfiltration",
+                        "finding_id": sess["id"],
+                        "description": sess.get("title", ""),
+                    },
+                ],
+                "narrative": (
+                    f"In component '{cid}', permissive CORS or cookie misconfigurations in {cfg['id']} allow malicious third-party web origins "
+                    f"to read sensitive session data and authentication endpoints referenced in {sess['id']}."
+                ),
+                "remediation": "Restrict CORS allowed origins and set Secure and SameSite flags on session cookies.",
+            }
+            chain["mermaid"] = generate_chain_mermaid(chain)
+            chains.append(chain)
 
     return chains
 

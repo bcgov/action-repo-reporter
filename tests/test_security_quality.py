@@ -1039,7 +1039,7 @@ class ReachabilityAndAttackChainingTests(unittest.TestCase):
             self.assertIn("lodash", imported)
             self.assertIn("express", imported)
             self.assertIn("@nestjs/common", imported)
-            self.assertIn("@nestjs", imported)
+            self.assertNotIn("@nestjs", imported)
             self.assertIn("axios", imported)
             self.assertIn("dotenv", imported)
 

@@ -1115,8 +1115,6 @@ class Compiler:
         self.seed_auth_crypto()
         self.ingest_semantic_domains()
         inventory = self.public_inventory()
-        self.findings.sort(key=lambda f: (SEVERITY_RANK.get(f["severity"], 9), f["id"]))
-
         # Classify components and attribute findings
         components = classify_components(self.root, self.repo)
         for f in self.findings:
@@ -1126,6 +1124,7 @@ class Compiler:
 
         # Reachability (VEX) analysis
         self.findings, vex_summary = assess_reachability(self.root, self.findings)
+        self.findings.sort(key=lambda f: (SEVERITY_RANK.get(f["severity"], 9), f["id"]))
 
         # Correlate exploit attack chains
         attack_chains = correlate_attack_chains(self.findings, components)
