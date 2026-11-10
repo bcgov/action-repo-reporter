@@ -16,6 +16,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import urllib.parse
 from collections import defaultdict
 from typing import Any
 
@@ -229,9 +230,12 @@ def is_allowlisted_action_tag(snippet: str, title: str) -> bool:
     """Allow floating tags for trusted official actions (actions/*, github/*, docker/*, bcgov/*)."""
     if not re.search(r"mutable tag|mutable.*branch|unpinned|pin.*action|commit sha", title, re.I):
         return False
-    lower_snip = snippet.lower()
+    m = re.search(r"""(?:^|\s)(?:-\s+)?uses:\s*['"]?([^\s'"]+)""", snippet, re.I)
+    if not m:
+        return False
+    action_ref = m.group(1).lower()
     for org in ("actions/", "github/", "docker/", "bcgov/"):
-        if f"uses: {org}" in lower_snip or f"uses: '{org}" in lower_snip or f'uses: "{org}' in lower_snip or lower_snip.startswith(f"- uses: {org}") or lower_snip.startswith(f"uses: {org}") or org in lower_snip:
+        if action_ref.startswith(org):
             return True
     return False
 
@@ -245,28 +249,101 @@ def is_internal_secrets_inherit(root: pathlib.Path, path: str, line: int, title:
         if not target.is_file():
             return False
         lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
-        start = max(0, line - 15)
-        end = min(len(lines), line + 10)
-        chunk = "\n".join(lines[start:end])
-        if re.search(r"uses:\s*(\./|\.github/workflows/|bcgov/)", chunk):
-            return True
+        if line < 1 or line > len(lines):
+            return False
+
+        # Indentation of cited secrets: inherit line
+        cited_line = lines[line - 1]
+        inherit_indent = len(cited_line) - len(cited_line.lstrip())
+
+        # Scan backwards to locate the job header (line with strictly less indentation)
+        job_start = line - 1
+        job_indent = inherit_indent
+        for i in range(line - 2, -1, -1):
+            stripped = lines[i].strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            curr_indent = len(lines[i]) - len(lines[i].lstrip())
+            if curr_indent < inherit_indent:
+                job_start = i
+                job_indent = curr_indent
+                break
+
+        # Scan forwards from job_start until the job block ends
+        job_lines = []
+        for i in range(job_start, len(lines)):
+            stripped = lines[i].strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            curr_indent = len(lines[i]) - len(lines[i].lstrip())
+            if i > job_start and curr_indent <= job_indent:
+                break
+            job_lines.append(lines[i])
+
+        # Resolve the uses: value belonging to this specific job
+        for j_line in job_lines:
+            m = re.search(r"""(?:^|\s)uses:\s*['"]?([^\s'"]+)""", j_line)
+            if m:
+                callee = m.group(1).lower()
+                return callee.startswith("./") or callee.startswith(".github/workflows/") or callee.startswith("bcgov/")
     except Exception:
         pass
     return False
 
 
 def is_ignorable_plaintext_http(path: str, snippet: str, title: str) -> bool:
-    """Ignore plaintext HTTP URLs in markdown, footers, comments, and schemas."""
+    """Ignore plaintext HTTP URLs in documentation, schemas, and static footer templates."""
     if not re.search(r"plaintext http|unencrypted http|cleartext http", title, re.I):
         return False
+
     ext = pathlib.Path(path).suffix.lower()
-    if ext in (".md", ".txt", ".rst", ".html", ".htm", ".json", ".svg", ".xml"):
+    path_low = path.lower()
+
+    # 1. Markdown and documentation files
+    if ext in (".md", ".txt", ".rst"):
         return True
-    lower_snip = snippet.lower()
-    if any(domain in lower_snip for domain in (
-        "gov.bc.ca", "w3.org", "json-schema.org", "schema.org", "example.com", "localhost", "127.0.0.1"
-    )):
-        return True
+
+    # Extract HTTP URLs from the snippet
+    urls = re.findall(r"http://[^\s\"'<>]+", snippet)
+    if not urls:
+        return False
+
+    parsed_hosts = []
+    for u in urls:
+        try:
+            h = (urllib.parse.urlparse(u).hostname or "").lower()
+            if h:
+                parsed_hosts.append(h)
+        except Exception:
+            pass
+
+    if not parsed_hosts:
+        return False
+
+    def is_trusted_schema_host(h: str) -> bool:
+        return h in ("w3.org", "json-schema.org", "schema.org") or any(
+            h.endswith("." + d) for d in ("w3.org", "json-schema.org", "schema.org")
+        )
+
+    def is_bcgov_host(h: str) -> bool:
+        return h == "gov.bc.ca" or h.endswith(".gov.bc.ca")
+
+    def is_local_or_example(h: str) -> bool:
+        return h in ("localhost", "127.0.0.1", "example.com") or h.endswith(".example.com")
+
+    # 2. Schema or namespace declaration context (e.g. xmlns, $schema)
+    is_schema_context = bool(re.search(r"""(?:xmlns|\$schema|schemaLocation)\b""", snippet, re.I))
+    if is_schema_context or any(is_trusted_schema_host(h) for h in parsed_hosts):
+        if all(is_trusted_schema_host(h) or is_local_or_example(h) for h in parsed_hosts):
+            return True
+
+    # 3. Static template / footer navigation links
+    is_link_tag = bool(re.search(r"""<a\s+[^>]*href=['"]http://""", snippet, re.I)) or "href=" in snippet
+    is_template_or_footer = ext in (".html", ".htm") or "footer" in path_low
+    if is_template_or_footer and is_link_tag:
+        if all(is_bcgov_host(h) or is_local_or_example(h) for h in parsed_hosts):
+            return True
+
     return False
 
 
