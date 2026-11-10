@@ -127,31 +127,6 @@ jobs:
             --report-link "security-assessment.md" \
             || echo "::warning::digest step returned non-zero; continuing without digest"
 
-      - name: Publish report to step summary
-        if: always()
-        run: |
-          set -euo pipefail
-          # If substance or scoring validation failed, clearly label output as diagnostic triage only
-          if [ "${{ steps.substance.conclusion }}" != "success" ] || [ "${{ steps.score.conclusion }}" != "success" ]; then
-            {
-              echo "> [!CAUTION]"
-              echo "> **DIAGNOSTIC OUTPUT ONLY — QUALITY GATES FAILED**"
-              echo ">"
-              echo "> This run failed quality validation gates (substance or scoring). The content below is unvalidated diagnostic output for triage and is not an accepted deliverable."
-              echo ""
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-          if [ -s reports/cover-letter.md ]; then
-            # Rewrite relative link to anchor to the full assessment included below
-            sed -E 's@\[([^]]+)\]\(([./]*|)security-assessment\.md\)@[\1 (included below)](#security-assessment-report)@' reports/cover-letter.md >> "$GITHUB_STEP_SUMMARY"
-            printf '\n\n---\n\n' >> "$GITHUB_STEP_SUMMARY"
-          fi
-          if [ -s reports/security-assessment.md ]; then
-            echo '<a id="security-assessment-report"></a>' >> "$GITHUB_STEP_SUMMARY"
-            cat reports/security-assessment.md >> "$GITHUB_STEP_SUMMARY"
-          fi
-
       - name: Artifact name
         if: always()
         id: art
@@ -163,6 +138,7 @@ jobs:
           echo "name=$(printf '%s' "$TARGET_REPOSITORY" | tr '/' '-')-security-assessment" >> "$GITHUB_OUTPUT"
 
       - name: Upload assessment
+        id: upload
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -175,3 +151,51 @@ jobs:
             evidence/*.json
             evidence/NOTES.txt
           if-no-files-found: error
+
+      - name: Publish report to step summary
+        if: always()
+        run: |
+          set -euo pipefail
+          repo="${{ inputs.target_repository }}"
+          art_name="$(printf '%s' "$repo" | tr '/' '-')-security-assessment"
+          art_url="${{ steps.upload.outputs.artifact-url }}"
+
+          # If substance or scoring validation failed, clearly label output as diagnostic triage only
+          if [ "${{ steps.substance.conclusion }}" != "success" ] || [ "${{ steps.score.conclusion }}" != "success" ]; then
+            {
+              echo "> [!CAUTION]"
+              echo "> **DIAGNOSTIC OUTPUT ONLY — QUALITY GATES FAILED**"
+              echo ">"
+              echo "> This run failed quality validation gates (substance or scoring). Findings and score are unvalidated diagnostic output for triage."
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          score="N/A"
+          crit="0"; high="0"; med="0"; low="0"; total="0"; fixed="0"
+          if [ -s reports/score.json ]; then
+            score="$(jq -r '.score // "N/A"' reports/score.json 2>/dev/null || echo "N/A")"
+            crit="$(jq -r '.counts.Critical // 0' reports/score.json 2>/dev/null || echo "0")"
+            high="$(jq -r '.counts.High // 0' reports/score.json 2>/dev/null || echo "0")"
+            med="$(jq -r '.counts.Medium // 0' reports/score.json 2>/dev/null || echo "0")"
+            low="$(jq -r '.counts.Low // 0' reports/score.json 2>/dev/null || echo "0")"
+          fi
+          if [ -s reports/findings.json ]; then
+            total="$(jq -r '.findings | length' reports/findings.json 2>/dev/null || echo "0")"
+            fixed="$(jq -r '.fixed | length' reports/findings.json 2>/dev/null || echo "0")"
+          fi
+
+          if [ -n "$art_url" ]; then
+            art_link="[\`$art_name\`]($art_url)"
+          else
+            art_link="\`$art_name\`"
+          fi
+
+          {
+            echo "### Security Assessment: \`$repo\`"
+            echo ""
+            echo "| Target | Score | Critical | High | Medium | Low | Total Findings | Fixed | Resulting Artifact |"
+            echo "|---|---|---|---|---|---|---|---|---|"
+            echo "| [\`$repo\`](https://github.com/$repo) | **$score** / 100 | $crit | $high | $med | $low | $total | $fixed | $art_link |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"

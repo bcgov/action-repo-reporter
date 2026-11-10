@@ -390,7 +390,7 @@ class DashboardSummaryTests(unittest.TestCase):
 
             out = mod.render_dashboard(root)
             self.assertIn("# Multi-Repo Security Assessments Dashboard", out)
-            self.assertIn("| [bcgov/nr-fom](https://github.com/bcgov/nr-fom) | **94** / 100 | 0 | 5 | 34 | 1 | 1 | 1 |", out)
+            self.assertIn("| [bcgov/nr-fom](https://github.com/bcgov/nr-fom) | **94** / 100 | 0 | 5 | 34 | 1 | 1 | 1 | `bcgov-nr-fom-security-assessment` |", out)
             self.assertIn("<summary><strong>bcgov/nr-fom</strong> — Score: 94 / 100 (1 findings, 1 fixed)</summary>", out)
             self.assertIn("Executive cover letter text with [security-assessment.md](https://github.com/bcgov/action-repo-reporter/blob/main/reports/nr-fom/security-assessment.md).", out)
             self.assertIn("**Confirmed Fixed:**", out)
@@ -399,6 +399,28 @@ class DashboardSummaryTests(unittest.TestCase):
             self.assertIn("- No alerts API access", out)
             # Ensure file on disk was not mutated
             self.assertEqual("Executive cover letter text with [security-assessment.md](security-assessment.md).", (target / "cover-letter.md").read_text())
+
+    def test_rollup_table_with_artifact_map(self):
+        mod = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            target = root / "nr-fom"
+            target.mkdir()
+            (target / "score.json").write_text(json.dumps({
+                "score": 94,
+                "counts": {"Critical": 0, "High": 5, "Medium": 34, "Low": 1}
+            }))
+            (target / "findings.json").write_text(json.dumps({
+                "repository": "bcgov/nr-fom",
+                "commit": "abc1234",
+                "findings": [],
+                "fixed": []
+            }))
+            art_map = {
+                "bcgov-nr-fom-security-assessment": "https://github.com/bcgov/action-repo-reporter/actions/runs/123/artifacts/456"
+            }
+            out = mod.render_dashboard(root, art_map)
+            self.assertIn("| [bcgov/nr-fom](https://github.com/bcgov/nr-fom) | **94** / 100 | 0 | 5 | 34 | 1 | 0 | 0 | [`bcgov-nr-fom-security-assessment`](https://github.com/bcgov/action-repo-reporter/actions/runs/123/artifacts/456) |", out)
 
 
 
