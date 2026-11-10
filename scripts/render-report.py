@@ -40,6 +40,8 @@ def render(data: dict) -> str:
 
     counts = Counter(f.get("severity") for f in findings if f.get("severity") in SEV_ORDER)
     domain_counts = Counter(f.get("domain") for f in findings if f.get("domain"))
+    vex = data.get("vex_summary") or {}
+    chains = data.get("attack_chains") or []
 
     lines = []
     lines.append(f"# Security Assessment: {repo}")
@@ -56,13 +58,19 @@ def render(data: dict) -> str:
     top = findings[:5]
     top_txt = ", ".join(f"{f['id']} ({f['severity']})" for f in top) if top else "none"
     gap_txt = "; ".join(gaps[:3]) if gaps else "none named"
+    vex_txt = ""
+    if vex and vex.get("total_dependency_findings"):
+        vex_txt = f" VEX analysis: {vex.get('reachable_findings', 0)}/{vex.get('total_dependency_findings', 0)} dependency CVEs reachable in source."
+    chain_txt = ""
+    if chains:
+        chain_txt = f" Correlated {len(chains)} exploit attack chain(s)."
     lines.append(
         f"{len(findings)} open finding(s) "
         f"(Critical {counts['Critical']}, High {counts['High']}, "
         f"Medium {counts['Medium']}, Low {counts['Low']}); "
         f"{len(fixed)} confirmed-fixed. "
         f"Top findings: {top_txt}. "
-        f"Coverage gaps: {gap_txt}. "
+        f"Coverage gaps: {gap_txt}.{vex_txt}{chain_txt} "
         "Score is written separately by score.py."
     )
     lines.append("")
@@ -142,6 +150,30 @@ def render(data: dict) -> str:
         lines.append("1. (insufficient path diversity to rank)")
     lines.append("")
 
+    # Exploit Attack Chains
+    if chains:
+        lines.append("## Attack chains (exploit correlation)")
+        lines.append("")
+        lines.append(
+            "Multi-stage exploit paths synthesized across individual scanner and code findings. "
+            "Remediating earlier stages breaks the attack chain."
+        )
+        lines.append("")
+        for ch in chains:
+            lines.append(f"### {ch.get('id')}: {ch.get('title')}")
+            lines.append("")
+            lines.append(f"- **Severity:** {ch.get('severity', 'High')}")
+            lines.append(f"- **Findings involved:** {', '.join(ch.get('findings', []))}")
+            lines.append(f"- **Narrative:** {ch.get('narrative')}")
+            lines.append(f"- **Coordinated Remediation:** {ch.get('remediation')}")
+            lines.append("")
+            diag = ch.get("mermaid")
+            if diag:
+                lines.append("```mermaid")
+                lines.append(diag)
+                lines.append("```")
+                lines.append("")
+
     # Tools summary (for clean-chapter substance)
     if tools:
         lines.append("## Tools run")
@@ -184,6 +216,21 @@ def render(data: dict) -> str:
                     lines.append(f"- **{comp.get('name')}** (`{comp.get('id')}`, type: `{comp.get('type')}`): paths {comp.get('paths')}")
                 lines.append("")
 
+        if cid in ("dependencies", "dependabot") and vex and vex.get("total_dependency_findings"):
+            lines.append("### VEX Reachability Analysis")
+            lines.append("")
+            r_pkgs = ", ".join(vex.get("reachable_packages", [])) or "none"
+            u_pkgs = ", ".join(vex.get("unreachable_packages", [])) or "none"
+            lines.append(
+                f"- Reachable dependency vulnerabilities: {vex.get('reachable_findings', 0)} "
+                f"(packages: {r_pkgs})"
+            )
+            lines.append(
+                f"- Unreachable transitive vulnerabilities: {vex.get('unreachable_findings', 0)} "
+                f"(packages: {u_pkgs})"
+            )
+            lines.append("")
+
         # Always leave substance beyond note+IDs/cites so the raised chapter gate passes
         # even for clean analyzed chapters (tooling/context sentence).
         lines.append(
@@ -219,6 +266,10 @@ def render(data: dict) -> str:
         lines.append(f"- **Severity:** {f.get('severity')}")
         lines.append(f"- **Domain:** {f.get('domain')}")
         lines.append(f"- **Source:** {f.get('source')}")
+        if f.get("reachability"):
+            lines.append(f"- **Reachability:** {f.get('reachability')} (VEX status: `{f.get('vex_status')}`)")
+        if f.get("vex_justification"):
+            lines.append(f"- **VEX Justification:** {f.get('vex_justification')}")
         ev_bits = []
         for ev in f.get("evidence") or []:
             if isinstance(ev, dict):

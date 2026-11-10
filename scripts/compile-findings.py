@@ -45,6 +45,19 @@ else:
     def analyze_semantic_domains(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
         return []
 
+_reach_path = pathlib.Path(__file__).resolve().parent / "analyze-reachability-and-chains.py"
+if _reach_path.is_file():
+    _spec_reach = importlib.util.spec_from_file_location("analyze_reachability_and_chains", _reach_path)
+    _mod_reach = importlib.util.module_from_spec(_spec_reach)
+    _spec_reach.loader.exec_module(_mod_reach)
+    assess_reachability = _mod_reach.assess_reachability
+    correlate_attack_chains = _mod_reach.correlate_attack_chains
+else:
+    def assess_reachability(repo_dir: pathlib.Path, findings: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        return findings, {}
+    def correlate_attack_chains(findings: list[dict[str, Any]], components: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        return []
+
 CHAPTERS = (
     "architecture", "cicd", "zero-trust", "authn", "authz", "injection",
     "configuration", "cryptography", "secrets", "logging-data", "code-scanning",
@@ -251,7 +264,8 @@ class Compiler:
 
     def _add_finding(self, *, domain: str, severity: str, title: str, evidence: list,
                      impact: str, recommendation: str, source: str, cwes: list[int] | None = None,
-                     dedupe_key: str | None = None, finding_id: str | None = None) -> str | None:
+                     dedupe_key: str | None = None, finding_id: str | None = None,
+                     package: str | None = None) -> str | None:
         if not evidence:
             return None
         key = dedupe_key or f"{source}|{title}|{evidence[0].get('file')}|{evidence[0].get('line')}"
@@ -269,6 +283,8 @@ class Compiler:
             "recommendation": recommendation.strip() or "Review and remediate per scanner guidance.",
             "source": source,
         }
+        if package:
+            entry["package"] = package
         if cwes:
             entry["cwe"] = [f"CWE-{c}" for c in cwes]
             cats = owasp_for_cwes(cwes)
@@ -491,6 +507,7 @@ class Compiler:
                 recommendation=f"Upgrade {name} from {version} to a patched release per {vid}.",
                 source="osv-scanner", cwes=cwes or [1104],
                 dedupe_key=f"dep|{lock}|{name}|{version}|{vid}",
+                package=name,
             )
             # Record aliases (e.g. CVE ids) so Trivy does not re-add the same advisory.
             for alias in aliases:
@@ -545,6 +562,7 @@ class Compiler:
                     title=f"{pkg} {ver}: {title}",
                     evidence=[ev], impact=desc, recommendation=rec,
                     source="trivy", cwes=cwes or [1104], dedupe_key=alt,
+                    package=pkg,
                 )
             for m in block.get("Misconfigurations") or []:
                 if not isinstance(m, dict):
@@ -615,6 +633,7 @@ class Compiler:
                 recommendation=f"Upgrade {pkg} per {ghsa}.", source="dependabot",
                 cwes=extract_cwes(adv.get("cve_id")) or [1104],
                 dedupe_key=f"dep|{lock}|{pkg}|{(dep.get('manifest_path') or '')}|{ghsa}",
+                package=pkg,
             )
         elif kind == "code-scanning":
             rule = alert.get("rule") or {}
@@ -1096,14 +1115,19 @@ class Compiler:
         self.seed_auth_crypto()
         self.ingest_semantic_domains()
         inventory = self.public_inventory()
-        self.findings.sort(key=lambda f: (SEVERITY_RANK.get(f["severity"], 9), f["id"]))
-
         # Classify components and attribute findings
         components = classify_components(self.root, self.repo)
         for f in self.findings:
             f["component"] = attribute_finding_to_component(f, components)
         for f in self.fixed:
             f["component"] = attribute_finding_to_component(f, components)
+
+        # Reachability (VEX) analysis
+        self.findings, vex_summary = assess_reachability(self.root, self.findings)
+        self.findings.sort(key=lambda f: (SEVERITY_RANK.get(f["severity"], 9), f["id"]))
+
+        # Correlate exploit attack chains
+        attack_chains = correlate_attack_chains(self.findings, components)
 
         mermaid_diag = generate_mermaid_diagram(components)
         architecture = {
@@ -1122,6 +1146,8 @@ class Compiler:
             "commit": self.commit,
             "components": components,
             "architecture": architecture,
+            "vex_summary": vex_summary,
+            "attack_chains": attack_chains,
             "findings": self.findings,
             "fixed": self.fixed,
             "questions": self.questions,

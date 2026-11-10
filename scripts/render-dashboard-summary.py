@@ -99,6 +99,21 @@ def render_dashboard(reports_dir: pathlib.Path) -> str:
                 lines.append(cl_text)
                 lines.append("")
 
+        chains = f.get("attack_chains") or []
+        if chains:
+            lines.append(f"**Exploit Attack Chains ({len(chains)}):**")
+            for ch in chains:
+                lines.append(f"- `{ch.get('id')}` [{ch.get('severity', 'High')}]: {ch.get('title')}")
+            lines.append("")
+
+        vex = f.get("vex_summary") or {}
+        if vex and vex.get("total_dependency_findings"):
+            lines.append(
+                f"**VEX Reachability:** {vex.get('reachable_findings', 0)} reachable / "
+                f"{vex.get('unreachable_findings', 0)} unreachable (of {vex.get('total_dependency_findings', 0)} dependency CVEs)"
+            )
+            lines.append("")
+
         if fixed:
             lines.append("**Confirmed Fixed:**")
             for fx in fixed:
