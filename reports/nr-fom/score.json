@@ -1,12 +1,12 @@
 {
-  "score": 94,
+  "score": 100,
   "counts": {
     "Critical": 0,
-    "High": 5,
-    "Medium": 34,
-    "Low": 1
+    "High": 4,
+    "Medium": 43,
+    "Low": 4
   },
-  "accepted": 40,
+  "accepted": 51,
   "rejected": [],
   "fixed_accepted": [
     "AUTH-001",
