@@ -45,8 +45,12 @@ def render_dashboard(reports_dir: pathlib.Path) -> str:
         return "\n".join(lines)
 
     # Rollup Table
-    lines.append("| Repository | Score | Critical | High | Medium | Low | Total Findings | Fixed |")
-    lines.append("|---|---|---|---|---|---|---|---|")
+    server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    server_repo = os.environ.get("GITHUB_REPOSITORY", "bcgov/action-repo-reporter")
+    run_id = os.environ.get("GITHUB_RUN_ID")
+
+    lines.append("| Repository | Score | Critical | High | Medium | Low | Total Findings | Fixed | Resulting Artifact |")
+    lines.append("|---|---|---|---|---|---|---|---|---|")
     for d, s, f in targets:
         repo = f.get("repository") or d.name
         score = s.get("score", 0)
@@ -58,7 +62,12 @@ def render_dashboard(reports_dir: pathlib.Path) -> str:
         total = len(f.get("findings") or [])
         fixed = len(f.get("fixed") or [])
         repo_link = f"[{repo}](https://github.com/{repo})" if "/" in repo else f"`{repo}`"
-        lines.append(f"| {repo_link} | **{score}** / 100 | {crit} | {high} | {med} | {low} | {total} | {fixed} |")
+        art_name = f"{(repo if '/' in repo else f'bcgov/{repo}').replace('/', '-')}-security-assessment"
+        if run_id:
+            art_link = f"[`{art_name}`]({server_url}/{server_repo}/actions/runs/{run_id}#artifacts)"
+        else:
+            art_link = f"`{art_name}`"
+        lines.append(f"| {repo_link} | **{score}** / 100 | {crit} | {high} | {med} | {low} | {total} | {fixed} | {art_link} |")
 
     lines.append("")
     lines.append("---")

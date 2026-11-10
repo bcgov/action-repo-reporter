@@ -16,16 +16,15 @@ on:
     inputs:
       repos:
         description: >-
-          Optional comma-separated subset (owner/name or bare repo name).
-          Empty = all five (nr-fom, nr-hydrometric-rating-curve, nr-results-exam,
-          nr-seedtransfer-map, pubcode).
+          Optional comma-separated subset (e.g. `repo1, repo2`).  Omitting runs all.
         required: false
         default: ""
         type: string
   workflow_call:
     inputs:
       repos:
-        description: Optional comma-separated subset; empty = all five (same as dispatch).
+        description: >-
+          Optional comma-separated subset (e.g. `repo1, repo2`).  Omitting runs all.
         required: false
         default: ""
         type: string
@@ -213,6 +212,16 @@ jobs:
           title: "chore: update security assessments"
           body: Automated security assessment reports from the Multi-Repo Security Assessments workflow.
           delete-branch: true
+
+      - name: Link Reports PR in summary
+        if: ${{ !inputs.dry_run && steps.cpr.outputs.pull-request-number != '' && steps.cpr.outputs.pull-request-number != '0' }}
+        run: |
+          set -euo pipefail
+          num="${{ steps.cpr.outputs.pull-request-number }}"
+          server_url="${{ github.server_url }}"
+          server_repo="${{ github.repository }}"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Reports Pull Request: [#${num}](${server_url}/${server_repo}/pull/${num})" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Require publish
         if: ${{ !inputs.dry_run }}

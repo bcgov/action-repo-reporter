@@ -390,7 +390,7 @@ class DashboardSummaryTests(unittest.TestCase):
 
             out = mod.render_dashboard(root)
             self.assertIn("# Multi-Repo Security Assessments Dashboard", out)
-            self.assertIn("| [bcgov/nr-fom](https://github.com/bcgov/nr-fom) | **94** / 100 | 0 | 5 | 34 | 1 | 1 | 1 |", out)
+            self.assertIn("| [bcgov/nr-fom](https://github.com/bcgov/nr-fom) | **94** / 100 | 0 | 5 | 34 | 1 | 1 | 1 | `bcgov-nr-fom-security-assessment` |", out)
             self.assertIn("<summary><strong>bcgov/nr-fom</strong> — Score: 94 / 100 (1 findings, 1 fixed)</summary>", out)
             self.assertIn("Executive cover letter text with [security-assessment.md](https://github.com/bcgov/action-repo-reporter/blob/main/reports/nr-fom/security-assessment.md).", out)
             self.assertIn("**Confirmed Fixed:**", out)
