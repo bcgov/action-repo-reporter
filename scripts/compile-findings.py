@@ -225,6 +225,51 @@ def cite(root: pathlib.Path, rel: str, line: int, snippet: str = "") -> dict | N
     return {"file": rel, "line": line, "snippet": snippet_at(root, rel, line, snippet)}
 
 
+def is_allowlisted_action_tag(snippet: str, title: str) -> bool:
+    """Allow floating tags for trusted official actions (actions/*, github/*, docker/*, bcgov/*)."""
+    if not re.search(r"mutable tag|mutable.*branch|unpinned|pin.*action|commit sha", title, re.I):
+        return False
+    lower_snip = snippet.lower()
+    for org in ("actions/", "github/", "docker/", "bcgov/"):
+        if f"uses: {org}" in lower_snip or f"uses: '{org}" in lower_snip or f'uses: "{org}' in lower_snip or lower_snip.startswith(f"- uses: {org}") or lower_snip.startswith(f"uses: {org}") or org in lower_snip:
+            return True
+    return False
+
+
+def is_internal_secrets_inherit(root: pathlib.Path, path: str, line: int, title: str) -> bool:
+    """Ignore secrets: inherit when calling internal relative or same-org reusable workflows."""
+    if not re.search(r"secrets?:\s*inherit", title, re.I):
+        return False
+    try:
+        target = (pathlib.Path(root) / path).resolve()
+        if not target.is_file():
+            return False
+        lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
+        start = max(0, line - 15)
+        end = min(len(lines), line + 10)
+        chunk = "\n".join(lines[start:end])
+        if re.search(r"uses:\s*(\./|\.github/workflows/|bcgov/)", chunk):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def is_ignorable_plaintext_http(path: str, snippet: str, title: str) -> bool:
+    """Ignore plaintext HTTP URLs in markdown, footers, comments, and schemas."""
+    if not re.search(r"plaintext http|unencrypted http|cleartext http", title, re.I):
+        return False
+    ext = pathlib.Path(path).suffix.lower()
+    if ext in (".md", ".txt", ".rst", ".html", ".htm", ".json", ".svg", ".xml"):
+        return True
+    lower_snip = snippet.lower()
+    if any(domain in lower_snip for domain in (
+        "gov.bc.ca", "w3.org", "json-schema.org", "schema.org", "example.com", "localhost", "127.0.0.1"
+    )):
+        return True
+    return False
+
+
 class Compiler:
     def __init__(self, repo: str, root: pathlib.Path, evidence: pathlib.Path):
         self.repo = repo
@@ -367,6 +412,14 @@ class Compiler:
             cwes = extract_cwes(meta.get("cwe") or meta.get("cwe_ids") or extra.get("cwe"))
             check_id = str(r.get("check_id") or "semgrep")
             message = str(extra.get("message") or meta.get("message") or check_id)
+            title = message.split("\n")[0][:160] or check_id
+            snip = ev.get("snippet") or extra.get("lines") or ""
+            if is_allowlisted_action_tag(snip, title):
+                continue
+            if is_internal_secrets_inherit(self.root, path, line, title):
+                continue
+            if is_ignorable_plaintext_http(path, snip, title):
+                continue
             severity = normalize_severity(extra.get("severity") or meta.get("impact"))
             domain = self._semgrep_domain(check_id, meta, path)
             if domain in ("secrets", "cryptography") or re.search(
@@ -577,10 +630,18 @@ class Compiler:
                 if not ev:
                     continue
                 mid = str(m.get("ID") or m.get("AVDID") or "trivy-misconfig")
+                m_title = str(m.get("Title") or mid)[:160]
+                m_snip = ev.get("snippet") or ""
+                if is_allowlisted_action_tag(m_snip, m_title):
+                    continue
+                if is_internal_secrets_inherit(self.root, path, line, m_title):
+                    continue
+                if is_ignorable_plaintext_http(path, m_snip, m_title):
+                    continue
                 domain = "cicd" if path.startswith(".github/") else "containers-iac"
                 self._add_finding(
                     domain=domain, severity=normalize_severity(m.get("Severity")),
-                    title=str(m.get("Title") or mid)[:160],
+                    title=m_title,
                     evidence=[ev],
                     impact=str(m.get("Message") or m.get("Description") or mid)[:300],
                     recommendation=str(m.get("Resolution") or "Apply the Trivy misconfiguration remediation.")[:400],
@@ -649,10 +710,18 @@ class Compiler:
             if not ev:
                 return
             help_text = str(rule.get("help") or rule.get("description") or rule.get("name") or "Code scanning alert")
+            title = str(rule.get("name") or rule.get("id") or "code-scanning")[:160]
+            snip = ev.get("snippet") or text or ""
+            if is_allowlisted_action_tag(snip, title):
+                return
+            if is_internal_secrets_inherit(self.root, path, int(line), title):
+                return
+            if is_ignorable_plaintext_http(path, snip, title):
+                return
             self._add_finding(
                 domain="injection",
                 severity=normalize_severity(rule.get("security_severity_level")),
-                title=str(rule.get("name") or rule.get("id") or "code-scanning")[:160],
+                title=title,
                 evidence=[ev], impact=help_text[:400],
                 recommendation=str(rule.get("help") or "Follow code-scanning remediation guidance.")[:400],
                 source="codeql", cwes=extract_cwes(rule.get("tags")),

@@ -909,6 +909,7 @@ class SemanticAnalyzersTests(unittest.TestCase):
                 "import axios from 'axios';\n"
                 "logger.warn('Invalid token');\n"
                 "console.info('JWT validation failed');\n"
+                "await axios.get('/api');\n"
                 "logger.error(err, err.message);\n"
             )
             data_findings = sem.analyze_sensitive_logging(t)
@@ -1225,6 +1226,111 @@ class ReachabilityAndAttackChainingTests(unittest.TestCase):
             dash_md = ds.render_dashboard(rep_dir)
             self.assertIn("Exploit Attack Chains", dash_md)
             self.assertIn("VEX Reachability", dash_md)
+
+
+class NoiseFiltersAndScoringTests(unittest.TestCase):
+    def test_is_allowlisted_action_tag(self):
+        spec = importlib.util.spec_from_file_location("compile_findings", ROOT / "scripts/compile-findings.py")
+        cf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cf)
+
+        # Official allowed orgs should be ignored
+        title = "GitHub Actions step uses a mutable tag or branch reference."
+        self.assertTrue(cf.is_allowlisted_action_tag("uses: actions/checkout@v4", title))
+        self.assertTrue(cf.is_allowlisted_action_tag("- uses: actions/setup-node@v4", title))
+        self.assertTrue(cf.is_allowlisted_action_tag("uses: github/codeql-action/upload-sarif@v3", title))
+        self.assertTrue(cf.is_allowlisted_action_tag("uses: docker/setup-buildx-action@v3", title))
+        self.assertTrue(cf.is_allowlisted_action_tag("uses: bcgov/action-builder@v1.0.0", title))
+
+        # Untrusted third-party actions with floating tags should NOT be ignored
+        self.assertFalse(cf.is_allowlisted_action_tag("uses: random-user/action@main", title))
+        self.assertFalse(cf.is_allowlisted_action_tag("uses: evil-corp/build@v1", title))
+
+        # Different title should not match
+        self.assertFalse(cf.is_allowlisted_action_tag("uses: actions/checkout@v4", "SQL injection in query"))
+
+    def test_is_internal_secrets_inherit(self):
+        spec = importlib.util.spec_from_file_location("compile_findings", ROOT / "scripts/compile-findings.py")
+        cf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cf)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            wf_dir = t / ".github" / "workflows"
+            wf_dir.mkdir(parents=True)
+            wf = wf_dir / "caller.yml"
+            wf.write_text(
+                "name: Caller\n"
+                "jobs:\n"
+                "  call:\n"
+                "    uses: ./.github/workflows/reusable.yml\n"
+                "    secrets: inherit\n"
+            )
+
+            title = "This workflow uses `secrets: inherit` to pass all of the calling workflow's secrets"
+            # Line 5 is secrets: inherit
+            self.assertTrue(cf.is_internal_secrets_inherit(t, ".github/workflows/caller.yml", 5, title))
+
+            # External third-party workflow call should NOT be ignored
+            ext_wf = wf_dir / "ext.yml"
+            ext_wf.write_text(
+                "name: External\n"
+                "jobs:\n"
+                "  call:\n"
+                "    uses: untrusted-org/repo/.github/workflows/run.yml@main\n"
+                "    secrets: inherit\n"
+            )
+            self.assertFalse(cf.is_internal_secrets_inherit(t, ".github/workflows/ext.yml", 5, title))
+
+    def test_is_ignorable_plaintext_http(self):
+        spec = importlib.util.spec_from_file_location("compile_findings", ROOT / "scripts/compile-findings.py")
+        cf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cf)
+
+        title = "This link points to a plaintext HTTP URL. Prefer an encrypted HTTPS URL if possible."
+        # Ignorable documentation / templates
+        self.assertTrue(cf.is_ignorable_plaintext_http("README.md", "http://example.com", title))
+        self.assertTrue(cf.is_ignorable_plaintext_http("footer.component.html", 'href="http://www2.gov.bc.ca/copyright"', title))
+        self.assertTrue(cf.is_ignorable_plaintext_http("schema.json", "http://json-schema.org/draft-07/schema#", title))
+        self.assertTrue(cf.is_ignorable_plaintext_http("icon.svg", 'xmlns="http://www.w3.org/2000/svg"', title))
+
+        # Actual production API endpoint in code should NOT be ignored
+        self.assertFalse(cf.is_ignorable_plaintext_http("src/api.ts", "const url = 'http://api.internal.service:8080/data';", title))
+
+    def test_compute_risk_score(self):
+        spec = importlib.util.spec_from_file_location("score", ROOT / "scripts/score.py")
+        score_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(score_mod)
+
+        # 0 findings = 0 score
+        self.assertEqual(0, score_mod.compute_risk_score({"Critical": 0, "High": 0, "Medium": 0, "Low": 0}))
+
+        # 1 Critical = 25
+        self.assertEqual(25, score_mod.compute_risk_score({"Critical": 1, "High": 0, "Medium": 0, "Low": 0}))
+
+        # 4 Critical = 100
+        self.assertEqual(100, score_mod.compute_risk_score({"Critical": 4, "High": 0, "Medium": 0, "Low": 0}))
+
+        # High cap is 40 (5 Highs = 40, 10 Highs = 40)
+        self.assertEqual(8, score_mod.compute_risk_score({"Critical": 0, "High": 1, "Medium": 0, "Low": 0}))
+        self.assertEqual(40, score_mod.compute_risk_score({"Critical": 0, "High": 5, "Medium": 0, "Low": 0}))
+        self.assertEqual(40, score_mod.compute_risk_score({"Critical": 0, "High": 10, "Medium": 0, "Low": 0}))
+
+        # Medium diminishing returns (cap 15)
+        self.assertEqual(3, score_mod.compute_risk_score({"Critical": 0, "High": 0, "Medium": 1, "Low": 0}))
+        # 10 mediums: round(4 * ln(11)) = round(4 * 2.398) = round(9.59) = 10
+        self.assertEqual(10, score_mod.compute_risk_score({"Critical": 0, "High": 0, "Medium": 10, "Low": 0}))
+        # 100 mediums: capped at 15
+        self.assertEqual(15, score_mod.compute_risk_score({"Critical": 0, "High": 0, "Medium": 100, "Low": 0}))
+
+        # Low cap is 5
+        self.assertEqual(1, score_mod.compute_risk_score({"Critical": 0, "High": 0, "Medium": 0, "Low": 5}))
+        self.assertEqual(5, score_mod.compute_risk_score({"Critical": 0, "High": 0, "Medium": 0, "Low": 25}))
+        self.assertEqual(5, score_mod.compute_risk_score({"Critical": 0, "High": 0, "Medium": 0, "Low": 100}))
+
+        # Typical well-maintained repo (e.g. nr-fom post-filtering): 0 C, 0 H, 3 M, 5 L -> 0 + 0 + 6 + 1 = 7
+        nr_fom_score = score_mod.compute_risk_score({"Critical": 0, "High": 0, "Medium": 3, "Low": 5})
+        self.assertTrue(0 <= nr_fom_score <= 15)
 
 
 if __name__ == "__main__":

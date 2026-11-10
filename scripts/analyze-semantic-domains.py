@@ -422,6 +422,10 @@ def analyze_sensitive_logging(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
         r"\b(?:logger|console)\.(?:error|warn|debug|info)\s*\((?:[^)]*,\s*)?\b(err|error|axiosError|e)\b(?!\s*[:.\[])(?:\s*[,)])",
         re.I,
     )
+    raw_axios_err_re = re.compile(
+        r"\b(?:logger|console)\.(?:error|warn|debug|info)\s*\((?:[^)]*,\s*)?\b(?:axiosError|httpError|(?:err|error|e)\.(?:config|request|response|headers))\b",
+        re.I,
+    )
 
     logger_call_re = re.compile(
         r"\b(?:logger|console)\.(?:log|info|debug|warn|error)\s*\((.*)\)",
@@ -434,10 +438,16 @@ def analyze_sensitive_logging(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
         content = "\n".join(lines)
 
         # 1. Raw HTTP client error object logging
+        # Only flag if the error explicitly accesses HTTP client properties or appears in an immediate HTTP catch block
         has_http_client = bool(re.search(r"\b(?:axios|fetch|request|urllib|httpx)\b", content, re.I))
         if has_http_client:
             for idx, line in enumerate(lines, 1):
-                if raw_err_re.search(line):
+                is_match = bool(raw_axios_err_re.search(line))
+                if not is_match and raw_err_re.search(line):
+                    chunk = "\n".join(lines[max(0, idx - 7):idx])
+                    if re.search(r"\b(?:axios\.|fetch\(|https?\.request|http\.get|http\.post)\b", chunk, re.I):
+                        is_match = True
+                if is_match:
                     findings.append({
                         "severity": "Medium",
                         "title": "Raw HTTP client error object passed directly to logger",
