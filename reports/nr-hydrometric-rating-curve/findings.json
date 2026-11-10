@@ -1,7 +1,210 @@
 {
   "repository": "bcgov/nr-hydrometric-rating-curve",
   "commit": "a182f073533ff08b899db4903c4edab1a7d97fa8",
+  "components": [
+    {
+      "id": "frontend-ingress",
+      "name": "Frontend Ingress",
+      "type": "ingress",
+      "paths": [
+        "frontend/nginx.conf.template"
+      ],
+      "integrations": [
+        "backend"
+      ]
+    },
+    {
+      "id": "frontend-app",
+      "name": "Frontend App",
+      "type": "api",
+      "paths": [
+        "frontend",
+        "frontend/rctool"
+      ],
+      "integrations": [
+        "database",
+        "ingress"
+      ]
+    },
+    {
+      "id": "database",
+      "name": "Relational Database",
+      "type": "database",
+      "paths": [
+        "frontend/rctool/migrations"
+      ],
+      "integrations": []
+    }
+  ],
+  "architecture": {
+    "mermaid": "graph TD\n    subgraph Users[\"Users & Clients\"]\n        UserClient[\"End Users / Browsers\"]\n    end\n    subgraph Presentation[\"Edge & Presentation Layer\"]\n        node_frontend_ingress([\"Frontend Ingress\"])\n    end\n    UserClient --> Presentation\n    subgraph Application[\"Application Services\"]\n        node_frontend_app[\"Frontend App\"]\n    end\n    subgraph Storage[\"Data & Persistence\"]\n        node_database[(\"Relational Database\")]\n    end\n    node_frontend_app -->|Persists to| node_database\n    node_frontend_app --> node_frontend_ingress\n    node_frontend_ingress -->|Proxies to| node_frontend_app",
+    "components": [
+      {
+        "id": "frontend-ingress",
+        "name": "Frontend Ingress",
+        "type": "ingress",
+        "paths": [
+          "frontend/nginx.conf.template"
+        ],
+        "integrations": [
+          "backend"
+        ]
+      },
+      {
+        "id": "frontend-app",
+        "name": "Frontend App",
+        "type": "api",
+        "paths": [
+          "frontend",
+          "frontend/rctool"
+        ],
+        "integrations": [
+          "database",
+          "ingress"
+        ]
+      },
+      {
+        "id": "database",
+        "name": "Relational Database",
+        "type": "database",
+        "paths": [
+          "frontend/rctool/migrations"
+        ],
+        "integrations": []
+      }
+    ]
+  },
+  "vex_summary": {
+    "total_dependency_findings": 0,
+    "reachable_findings": 0,
+    "unreachable_findings": 0,
+    "unassessed_findings": 0,
+    "reachable_packages": [],
+    "unreachable_packages": [],
+    "unassessed_packages": []
+  },
+  "attack_chains": [],
   "findings": [
+    {
+      "id": "AUTHZ-001",
+      "domain": "AUTHZ",
+      "severity": "High",
+      "title": "Unprotected mutating Django view function: rctool_import",
+      "evidence": [
+        {
+          "file": "frontend/rctool/views.py",
+          "line": 85,
+          "snippet": "def rctool_import(request, tour_request_id=0):"
+        }
+      ],
+      "impact": "View executes database mutations without enforcing user authentication or permission checks, exposing endpoints to unauthenticated callers.",
+      "recommendation": "Decorate the view with `@login_required` or apply DRF permission classes requiring authentication.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-284",
+        "CWE-862"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ],
+      "component": "frontend-app"
+    },
+    {
+      "id": "AUTHZ-002",
+      "domain": "AUTHZ",
+      "severity": "High",
+      "title": "Unprotected mutating Django view function: rctool_develop_initialize",
+      "evidence": [
+        {
+          "file": "frontend/rctool/views.py",
+          "line": 381,
+          "snippet": "def rctool_develop_initialize(request):"
+        }
+      ],
+      "impact": "View executes database mutations without enforcing user authentication or permission checks, exposing endpoints to unauthenticated callers.",
+      "recommendation": "Decorate the view with `@login_required` or apply DRF permission classes requiring authentication.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-284",
+        "CWE-862"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ],
+      "component": "frontend-app"
+    },
+    {
+      "id": "AUTHZ-003",
+      "domain": "AUTHZ",
+      "severity": "High",
+      "title": "Unprotected mutating Django view function: rctool_develop_autofit",
+      "evidence": [
+        {
+          "file": "frontend/rctool/views.py",
+          "line": 576,
+          "snippet": "def rctool_develop_autofit(request):"
+        }
+      ],
+      "impact": "View executes database mutations without enforcing user authentication or permission checks, exposing endpoints to unauthenticated callers.",
+      "recommendation": "Decorate the view with `@login_required` or apply DRF permission classes requiring authentication.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-284",
+        "CWE-862"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ],
+      "component": "frontend-app"
+    },
+    {
+      "id": "AUTHZ-004",
+      "domain": "AUTHZ",
+      "severity": "High",
+      "title": "Unprotected mutating Django view function: rctool_export_initialize",
+      "evidence": [
+        {
+          "file": "frontend/rctool/views.py",
+          "line": 674,
+          "snippet": "def rctool_export_initialize(request):"
+        }
+      ],
+      "impact": "View executes database mutations without enforcing user authentication or permission checks, exposing endpoints to unauthenticated callers.",
+      "recommendation": "Decorate the view with `@login_required` or apply DRF permission classes requiring authentication.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-284",
+        "CWE-862"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ],
+      "component": "frontend-app"
+    },
+    {
+      "id": "AUTHZ-005",
+      "domain": "AUTHZ",
+      "severity": "High",
+      "title": "Unprotected mutating Django view function: rctool_export_output",
+      "evidence": [
+        {
+          "file": "frontend/rctool/views.py",
+          "line": 904,
+          "snippet": "def rctool_export_output(request):"
+        }
+      ],
+      "impact": "View executes database mutations without enforcing user authentication or permission checks, exposing endpoints to unauthenticated callers.",
+      "recommendation": "Decorate the view with `@login_required` or apply DRF permission classes requiring authentication.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-284",
+        "CWE-862"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ],
+      "component": "frontend-app"
+    },
     {
       "id": "CICD-001",
       "domain": "CICD",
@@ -22,7 +225,8 @@
       ],
       "owasp": [
         "A03 Injection"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-002",
@@ -44,7 +248,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-009",
@@ -66,7 +271,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-002",
@@ -86,7 +292,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-003",
@@ -106,7 +313,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-004",
@@ -126,7 +334,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-005",
@@ -146,7 +355,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-006",
@@ -166,7 +376,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-007",
@@ -186,7 +397,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-008",
@@ -206,7 +418,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-009",
@@ -226,7 +439,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-010",
@@ -246,7 +460,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-011",
@@ -266,7 +481,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-012",
@@ -286,7 +502,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-013",
@@ -306,7 +523,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-006",
@@ -328,7 +546,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-007",
@@ -350,7 +569,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-013",
@@ -372,7 +592,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-014",
@@ -394,7 +615,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INJ-001",
@@ -416,7 +638,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "frontend-app"
     },
     {
       "id": "INJ-002",
@@ -438,7 +661,8 @@
       ],
       "owasp": [
         "A03 Injection"
-      ]
+      ],
+      "component": "frontend-app"
     },
     {
       "id": "INJ-003",
@@ -460,7 +684,8 @@
       ],
       "owasp": [
         "A03 Injection"
-      ]
+      ],
+      "component": "frontend-app"
     },
     {
       "id": "INJ-004",
@@ -479,7 +704,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-915"
-      ]
+      ],
+      "component": "frontend-app"
     },
     {
       "id": "INFRA-001",
@@ -501,7 +727,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-003",
@@ -523,7 +750,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-004",
@@ -545,7 +773,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-005",
@@ -567,7 +796,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-008",
@@ -589,7 +819,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-010",
@@ -611,7 +842,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-011",
@@ -633,7 +865,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-012",
@@ -655,7 +888,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     }
   ],
   "fixed": [],
@@ -704,14 +938,14 @@
       "status": "analyzed",
       "note": "Mapped 8 Critical/High/Medium finding(s) to Verify Explicitly / Least Privilege / Assume Breach themes from scanner output.",
       "finding_ids": [
+        "AUTHZ-001",
+        "AUTHZ-002",
+        "AUTHZ-003",
+        "AUTHZ-004",
+        "AUTHZ-005",
         "CICD-001",
         "INFRA-002",
-        "INFRA-009",
-        "CICD-002",
-        "CICD-003",
-        "CICD-004",
-        "CICD-005",
-        "CICD-006"
+        "INFRA-009"
       ],
       "evidence": []
     },
@@ -729,9 +963,15 @@
     },
     {
       "id": "authz",
-      "status": "not_assessed",
-      "note": "No NestJS @UseGuards/@Roles/CanActivate patterns found for automated authz rules.",
-      "finding_ids": [],
+      "status": "analyzed",
+      "note": "Semantic authorization analysis reviewed controllers and endpoints; found 5 authorization/access control finding(s).",
+      "finding_ids": [
+        "AUTHZ-001",
+        "AUTHZ-002",
+        "AUTHZ-003",
+        "AUTHZ-004",
+        "AUTHZ-005"
+      ],
       "evidence": []
     },
     {
@@ -785,7 +1025,7 @@
     {
       "id": "logging-data",
       "status": "analyzed",
-      "note": "Logging/PII scanner hits: 0. This pass uses automated rules only, not a full DATA audit.",
+      "note": "Logging/PII semantic and scanner hits: 0. Review checked client error logging and credential leaks.",
       "finding_ids": [],
       "evidence": [
         {

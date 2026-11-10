@@ -1,6 +1,69 @@
 {
   "repository": "bcgov/nr-seedtransfer-map",
   "commit": "ae8766441241e9ba3dadc054352c2646fec8f0a0",
+  "components": [
+    {
+      "id": "root-app",
+      "name": "bcgov/nr-seedtransfer-map Core",
+      "type": "api",
+      "paths": [
+        "."
+      ],
+      "integrations": []
+    }
+  ],
+  "architecture": {
+    "mermaid": "graph TD\n    subgraph Users[\"Users & Clients\"]\n        UserClient[\"End Users / Browsers\"]\n    end\n    subgraph Application[\"Application Services\"]\n        node_root_app[\"bcgov/nr-seedtransfer-map Core\"]\n    end",
+    "components": [
+      {
+        "id": "root-app",
+        "name": "bcgov/nr-seedtransfer-map Core",
+        "type": "api",
+        "paths": [
+          "."
+        ],
+        "integrations": []
+      }
+    ]
+  },
+  "vex_summary": {
+    "total_dependency_findings": 1,
+    "reachable_findings": 0,
+    "unreachable_findings": 1,
+    "unassessed_findings": 0,
+    "reachable_packages": [],
+    "unreachable_packages": [
+      "minimatch"
+    ],
+    "unassessed_packages": []
+  },
+  "attack_chains": [
+    {
+      "id": "CHAIN-001",
+      "title": "[root-app] Reachable Component Flaw to Secret Exfiltration",
+      "severity": "High",
+      "component": "root-app",
+      "findings": [
+        "INJ-001",
+        "DATA-001"
+      ],
+      "stages": [
+        {
+          "stage": "Library Exploitation",
+          "finding_id": "INJ-001",
+          "description": "This tag is missing an 'integrity' subresource integrity attribute. The 'integrity' attribute allows for the browser to verify that externally hosted files (for"
+        },
+        {
+          "stage": "Secret Exfiltration",
+          "finding_id": "DATA-001",
+          "description": "Raw HTTP client error object passed directly to logger"
+        }
+      ],
+      "narrative": "In component 'root-app', exploiting reachable dependency vulnerability INJ-001 grants code execution access within the container context, leading to extraction of credentials identified in DATA-001.",
+      "remediation": "Upgrade the reachable dependency and rotate the exposed credentials.",
+      "mermaid": "graph LR\n    S1[\"INJ-001: Library Exploitation<br/><i>This tag is missing an 'integrity' sub</i>\"]\n    S2[\"DATA-001: Secret Exfiltration<br/><i>Raw HTTP client error object passed di</i>\"]\n    S1 -->|enables| S2\n    S2 -->|Impact| Target[\"[root-app] Reachable Component Flaw to Secret Exfiltration\"]"
+    }
+  ],
   "findings": [
     {
       "id": "CICD-001",
@@ -20,7 +83,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-002",
@@ -40,7 +104,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-003",
@@ -60,7 +125,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-004",
@@ -80,7 +146,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-005",
@@ -100,7 +167,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-006",
@@ -120,7 +188,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-007",
@@ -140,7 +209,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-008",
@@ -160,7 +230,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-009",
@@ -180,7 +251,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-010",
@@ -200,7 +272,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-011",
@@ -220,7 +293,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-012",
@@ -240,7 +314,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-013",
@@ -260,7 +335,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CICD-014",
@@ -280,7 +356,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CRYPTO-001",
@@ -302,7 +379,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CRYPTO-002",
@@ -324,7 +402,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "CRYPTO-003",
@@ -346,26 +425,77 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "root-app"
     },
     {
-      "id": "DEPS-001",
-      "domain": "DEPS",
+      "id": "DATA-001",
+      "domain": "DATA",
       "severity": "Medium",
-      "title": "minimatch 10.2.6 affected by GHSA-g3hv-75wg-m249",
+      "title": "Raw HTTP client error object passed directly to logger",
       "evidence": [
         {
-          "file": "package-lock.json",
-          "line": 1312,
-          "snippet": "\"node_modules/minimatch\": {"
+          "file": "docs/scripts/defineMap.js",
+          "line": 147,
+          "snippet": "console.error('Failed to load Management Unit layer from local FlatGeobuf.', error)"
         }
       ],
-      "impact": "minimatch has potential denial of service via globparts amplification CWE: CWE-405 Aliases: CVE-2026-118764.",
-      "recommendation": "Upgrade minimatch from 10.2.6 to a patched release per GHSA-g3hv-75wg-m249.",
-      "source": "osv-scanner",
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
       "cwe": [
-        "CWE-405"
-      ]
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "root-app"
+    },
+    {
+      "id": "DATA-002",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "docs/scripts/defineMap.js",
+          "line": 479,
+          "snippet": "console.error(error)"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "root-app"
+    },
+    {
+      "id": "DATA-003",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "scripts/export-layers-to-fgb.js",
+          "line": 348,
+          "snippet": "console.error('Error exporting layers:', err);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "root-app"
     },
     {
       "id": "INJ-001",
@@ -384,7 +514,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "INJ-002",
@@ -403,7 +534,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "INJ-003",
@@ -422,7 +554,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "INJ-004",
@@ -441,7 +574,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-353"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "INJ-005",
@@ -463,7 +597,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "root-app"
     },
     {
       "id": "INJ-006",
@@ -482,7 +617,34 @@
       "source": "semgrep",
       "cwe": [
         "CWE-829"
-      ]
+      ],
+      "component": "root-app"
+    },
+    {
+      "id": "DEPS-001",
+      "domain": "DEPS",
+      "severity": "Low",
+      "title": "minimatch 10.2.6 affected by GHSA-g3hv-75wg-m249",
+      "evidence": [
+        {
+          "file": "package-lock.json",
+          "line": 1312,
+          "snippet": "\"node_modules/minimatch\": {"
+        }
+      ],
+      "impact": "minimatch has potential denial of service via globparts amplification CWE: CWE-405 Aliases: CVE-2026-118764.",
+      "recommendation": "Upgrade minimatch from 10.2.6 to a patched release per GHSA-g3hv-75wg-m249.",
+      "source": "osv-scanner",
+      "package": "minimatch",
+      "cwe": [
+        "CWE-405"
+      ],
+      "component": "root-app",
+      "reachability": "unreachable",
+      "vex_status": "not_affected",
+      "vex_justification": "vulnerable_code_not_in_execute_path (unimported transitive dependency with no imported parent callers)",
+      "original_severity": "Medium",
+      "effective_severity": "Low"
     }
   ],
   "fixed": [],
@@ -562,7 +724,7 @@
     {
       "id": "authz",
       "status": "not_assessed",
-      "note": "No NestJS @UseGuards/@Roles/CanActivate patterns found for automated authz rules.",
+      "note": "No NestJS, Express, or Django authorization patterns or endpoints found to assess.",
       "finding_ids": [],
       "evidence": []
     },
@@ -618,14 +780,13 @@
     {
       "id": "logging-data",
       "status": "analyzed",
-      "note": "Logging/PII scanner hits: 0. This pass uses automated rules only, not a full DATA audit.",
-      "finding_ids": [],
-      "evidence": [
-        {
-          "file": "README.md",
-          "line": 1
-        }
-      ]
+      "note": "Logging/PII semantic and scanner hits: 3. Review checked client error logging and credential leaks.",
+      "finding_ids": [
+        "DATA-001",
+        "DATA-002",
+        "DATA-003"
+      ],
+      "evidence": []
     },
     {
       "id": "code-scanning",

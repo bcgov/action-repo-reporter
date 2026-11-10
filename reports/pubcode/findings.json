@@ -1,7 +1,250 @@
 {
   "repository": "bcgov/pubcode",
   "commit": "6fffc5f65f6fb5be234d890d47677bc76570c745",
+  "components": [
+    {
+      "id": "frontend-web-server",
+      "name": "Frontend Web Server",
+      "type": "ingress",
+      "paths": [
+        "frontend/Caddyfile"
+      ],
+      "integrations": [
+        "api"
+      ]
+    },
+    {
+      "id": "frontend",
+      "name": "Frontend App",
+      "type": "frontend",
+      "paths": [
+        "frontend"
+      ],
+      "integrations": [
+        "api"
+      ]
+    },
+    {
+      "id": "api",
+      "name": "API Service",
+      "type": "api",
+      "paths": [
+        "api"
+      ],
+      "integrations": [
+        "auth-gateway",
+        "database"
+      ]
+    },
+    {
+      "id": "crawler",
+      "name": "Crawler Service",
+      "type": "batch",
+      "paths": [
+        "crawler"
+      ],
+      "integrations": [
+        "api"
+      ]
+    },
+    {
+      "id": "utilities",
+      "name": "Utilities Service",
+      "type": "batch",
+      "paths": [
+        "utilities"
+      ],
+      "integrations": [
+        "api"
+      ]
+    },
+    {
+      "id": "database",
+      "name": "Relational Database",
+      "type": "database",
+      "paths": [
+        "database",
+        "docker-compose.yml"
+      ],
+      "integrations": []
+    },
+    {
+      "id": "common",
+      "name": "Shared Common",
+      "type": "library",
+      "paths": [
+        "common"
+      ],
+      "integrations": []
+    }
+  ],
+  "architecture": {
+    "mermaid": "graph TD\n    subgraph Users[\"Users & Clients\"]\n        UserClient[\"End Users / Browsers\"]\n    end\n    subgraph Presentation[\"Edge & Presentation Layer\"]\n        node_frontend_web_server([\"Frontend Web Server\"])\n        node_frontend[\"Frontend App\"]\n    end\n    UserClient --> Presentation\n    subgraph Application[\"Application Services\"]\n        node_api[\"API Service\"]\n        node_crawler[\"Crawler Service\"]\n        node_utilities[\"Utilities Service\"]\n    end\n    subgraph Storage[\"Data & Persistence\"]\n        node_database[(\"Relational Database\")]\n    end\n    subgraph Shared[\"Shared Libraries\"]\n        node_common[\"Shared Common\"]\n    end\n    node_frontend_web_server --> node_api\n    node_frontend --> node_api\n    node_api -->|Persists to| node_database\n    node_crawler --> node_api\n    node_utilities --> node_api\n    node_api -.->|Consumes| node_common",
+    "components": [
+      {
+        "id": "frontend-web-server",
+        "name": "Frontend Web Server",
+        "type": "ingress",
+        "paths": [
+          "frontend/Caddyfile"
+        ],
+        "integrations": [
+          "api"
+        ]
+      },
+      {
+        "id": "frontend",
+        "name": "Frontend App",
+        "type": "frontend",
+        "paths": [
+          "frontend"
+        ],
+        "integrations": [
+          "api"
+        ]
+      },
+      {
+        "id": "api",
+        "name": "API Service",
+        "type": "api",
+        "paths": [
+          "api"
+        ],
+        "integrations": [
+          "auth-gateway",
+          "database"
+        ]
+      },
+      {
+        "id": "crawler",
+        "name": "Crawler Service",
+        "type": "batch",
+        "paths": [
+          "crawler"
+        ],
+        "integrations": [
+          "api"
+        ]
+      },
+      {
+        "id": "utilities",
+        "name": "Utilities Service",
+        "type": "batch",
+        "paths": [
+          "utilities"
+        ],
+        "integrations": [
+          "api"
+        ]
+      },
+      {
+        "id": "database",
+        "name": "Relational Database",
+        "type": "database",
+        "paths": [
+          "database",
+          "docker-compose.yml"
+        ],
+        "integrations": []
+      },
+      {
+        "id": "common",
+        "name": "Shared Common",
+        "type": "library",
+        "paths": [
+          "common"
+        ],
+        "integrations": []
+      }
+    ]
+  },
+  "vex_summary": {
+    "total_dependency_findings": 4,
+    "reachable_findings": 4,
+    "unreachable_findings": 0,
+    "unassessed_findings": 0,
+    "reachable_packages": [
+      "minimatch"
+    ],
+    "unreachable_packages": [],
+    "unassessed_packages": []
+  },
+  "attack_chains": [
+    {
+      "id": "CHAIN-001",
+      "title": "[api] Credential Disclosure to Unauthorized State Mutation",
+      "severity": "Critical",
+      "component": "api",
+      "findings": [
+        "DATA-001",
+        "AUTHZ-001"
+      ],
+      "stages": [
+        {
+          "stage": "Credential Harvesting",
+          "finding_id": "DATA-001",
+          "description": "Raw HTTP client error object passed directly to logger"
+        },
+        {
+          "stage": "Privilege Exploitation",
+          "finding_id": "AUTHZ-001",
+          "description": "Unauthenticated mutating route in Express (POST /bulk-load)"
+        }
+      ],
+      "narrative": "In component 'api', an attacker harvesting leaked authorization tokens or credentials via DATA-001 can execute state-changing actions via unguarded mutating endpoint AUTHZ-001 without triggering access control defenses.",
+      "remediation": "Redact sensitive log outputs and enforce controller/route guard decorators.",
+      "mermaid": "graph LR\n    S1[\"DATA-001: Credential Harvesting<br/><i>Raw HTTP client error object passed di</i>\"]\n    S2[\"AUTHZ-001: Privilege Exploitation<br/><i>Unauthenticated mutating route in Expr</i>\"]\n    S1 -->|enables| S2\n    S2 -->|Impact| Target[\"[api] Credential Disclosure to Unauthorized State Mutation\"]"
+    }
+  ],
   "findings": [
+    {
+      "id": "AUTHZ-001",
+      "domain": "AUTHZ",
+      "severity": "High",
+      "title": "Unauthenticated mutating route in Express (POST /bulk-load)",
+      "evidence": [
+        {
+          "file": "api/src/routes/pubcode-router.js",
+          "line": 25,
+          "snippet": "router.post(\"/bulk-load\", (req, res, next) => {"
+        }
+      ],
+      "impact": "Route handler processes mutating requests without prior authentication middleware, permitting unauthorized data modification.",
+      "recommendation": "Insert authentication and authorization middleware (e.g. `passport.authenticate` or `verifyToken`) before the route handler.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-284",
+        "CWE-862"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "AUTHZ-002",
+      "domain": "AUTHZ",
+      "severity": "High",
+      "title": "Unauthenticated mutating route in Express (DELETE /:repo_name)",
+      "evidence": [
+        {
+          "file": "api/src/routes/pubcode-router.js",
+          "line": 35,
+          "snippet": "router.delete(\"/:repo_name\", (req, res, next) => {"
+        }
+      ],
+      "impact": "Route handler processes mutating requests without prior authentication middleware, permitting unauthorized data modification.",
+      "recommendation": "Insert authentication and authorization middleware (e.g. `passport.authenticate` or `verifyToken`) before the route handler.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-284",
+        "CWE-862"
+      ],
+      "owasp": [
+        "A01 Broken Access Control"
+      ],
+      "component": "api"
+    },
     {
       "id": "CICD-016",
       "domain": "CICD",
@@ -19,7 +262,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-250"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-017",
@@ -38,7 +282,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-250"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-019",
@@ -57,7 +302,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-250"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-001",
@@ -77,7 +323,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-002",
@@ -97,7 +344,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-003",
@@ -117,7 +365,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-004",
@@ -137,7 +386,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-005",
@@ -157,7 +407,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-006",
@@ -177,7 +428,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-007",
@@ -197,7 +449,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-008",
@@ -217,7 +470,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-009",
@@ -237,7 +491,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-010",
@@ -257,7 +512,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-011",
@@ -277,7 +533,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-012",
@@ -297,7 +554,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-013",
@@ -317,7 +575,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-014",
@@ -337,7 +596,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-015",
@@ -357,7 +617,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-018",
@@ -377,7 +638,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-020",
@@ -397,7 +659,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-021",
@@ -417,7 +680,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-022",
@@ -437,7 +701,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-023",
@@ -457,7 +722,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-024",
@@ -477,7 +743,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-025",
@@ -497,7 +764,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-026",
@@ -517,7 +785,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-027",
@@ -537,7 +806,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-028",
@@ -557,7 +827,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-029",
@@ -577,7 +848,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-030",
@@ -597,7 +869,353 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
+    },
+    {
+      "id": "DATA-001",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/email/ches-service.js",
+          "line": 29,
+          "snippet": "console.error(SERVICE, e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-002",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/email/ches-service.js",
+          "line": 55,
+          "snippet": "console.error(SERVICE, e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-003",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/email/ches-service.js",
+          "line": 84,
+          "snippet": "console.error(SERVICE, e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-004",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/email/ches-service.js",
+          "line": 103,
+          "snippet": "console.error(e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-005",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/email/ches-service.js",
+          "line": 123,
+          "snippet": "console.error(SERVICE, e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-006",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/email/ches-service.js",
+          "line": 142,
+          "snippet": "console.error(SERVICE, e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-007",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/email/ches-service.js",
+          "line": 171,
+          "snippet": "console.error(SERVICE, e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-008",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/services/pub-code-service.js",
+          "line": 38,
+          "snippet": "logger.error(\"bulkLoad: \", e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-009",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/services/pub-code-service.js",
+          "line": 55,
+          "snippet": "logger.error(\"bulkLoad: \", error);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-010",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/services/pub-code-service.js",
+          "line": 61,
+          "snippet": "logger.error(\"bulkLoad: \", e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-011",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/services/pub-code-service.js",
+          "line": 72,
+          "snippet": "logger.error(\"readAll: \", error);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-012",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/services/pub-code-service.js",
+          "line": 78,
+          "snippet": "logger.error(\"bulkLoad: \", e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-013",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/services/pub-code-service.js",
+          "line": 91,
+          "snippet": "logger.error(\"findById: \", error);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-014",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/services/pub-code-service.js",
+          "line": 100,
+          "snippet": "logger.error(\"health: \", error);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
+    },
+    {
+      "id": "DATA-015",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "api/src/services/pub-code-service.js",
+          "line": 116,
+          "snippet": "logger.error(\"softDeleteRepo: \", error);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "api"
     },
     {
       "id": "DEPS-001",
@@ -614,9 +1232,14 @@
       "impact": "minimatch has potential denial of service via globparts amplification CWE: CWE-405 Aliases: CVE-2026-118764.",
       "recommendation": "Upgrade minimatch from 10.2.6 to a patched release per GHSA-g3hv-75wg-m249.",
       "source": "osv-scanner",
+      "package": "minimatch",
       "cwe": [
         "CWE-405"
-      ]
+      ],
+      "component": "api",
+      "reachability": "reachable",
+      "vex_status": "affected",
+      "vex_justification": "Transitively reachable via imported package 'eslint-plugin-react'."
     },
     {
       "id": "DEPS-002",
@@ -633,9 +1256,14 @@
       "impact": "minimatch has potential denial of service via globparts amplification CWE: CWE-405 Aliases: CVE-2026-118764.",
       "recommendation": "Upgrade minimatch from 10.2.6 to a patched release per GHSA-g3hv-75wg-m249.",
       "source": "osv-scanner",
+      "package": "minimatch",
       "cwe": [
         "CWE-405"
-      ]
+      ],
+      "component": "crawler",
+      "reachability": "reachable",
+      "vex_status": "affected",
+      "vex_justification": "Transitively reachable via imported package 'eslint-plugin-react'."
     },
     {
       "id": "DEPS-003",
@@ -652,9 +1280,14 @@
       "impact": "minimatch has potential denial of service via globparts amplification CWE: CWE-405 Aliases: CVE-2026-118764.",
       "recommendation": "Upgrade minimatch from 10.2.6 to a patched release per GHSA-g3hv-75wg-m249.",
       "source": "osv-scanner",
+      "package": "minimatch",
       "cwe": [
         "CWE-405"
-      ]
+      ],
+      "component": "frontend",
+      "reachability": "reachable",
+      "vex_status": "affected",
+      "vex_justification": "Transitively reachable via imported package 'eslint-plugin-react'."
     },
     {
       "id": "DEPS-004",
@@ -671,9 +1304,14 @@
       "impact": "minimatch has potential denial of service via globparts amplification CWE: CWE-405 Aliases: CVE-2026-118764.",
       "recommendation": "Upgrade minimatch from 10.2.6 to a patched release per GHSA-g3hv-75wg-m249.",
       "source": "osv-scanner",
+      "package": "minimatch",
       "cwe": [
         "CWE-405"
-      ]
+      ],
+      "component": "utilities",
+      "reachability": "reachable",
+      "vex_status": "affected",
+      "vex_justification": "Transitively reachable via imported package 'eslint-plugin-react'."
     },
     {
       "id": "INFRA-001",
@@ -692,7 +1330,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-002",
@@ -711,7 +1350,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-003",
@@ -730,7 +1370,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-004",
@@ -749,7 +1390,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "database"
     },
     {
       "id": "INFRA-005",
@@ -768,7 +1410,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "database"
     },
     {
       "id": "INFRA-006",
@@ -787,7 +1430,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "database"
     },
     {
       "id": "INFRA-007",
@@ -806,7 +1450,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "database"
     },
     {
       "id": "INFRA-008",
@@ -825,7 +1470,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "database"
     },
     {
       "id": "INFRA-009",
@@ -844,7 +1490,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "database"
     },
     {
       "id": "INFRA-010",
@@ -863,7 +1510,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "database"
     },
     {
       "id": "INFRA-011",
@@ -882,7 +1530,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "database"
     },
     {
       "id": "INFRA-015",
@@ -904,7 +1553,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-022",
@@ -926,7 +1576,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-023",
@@ -948,7 +1599,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-027",
@@ -970,7 +1622,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INJ-002",
@@ -989,7 +1642,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-319"
-      ]
+      ],
+      "component": "api"
     },
     {
       "id": "INFRA-012",
@@ -1011,7 +1665,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-013",
@@ -1033,7 +1688,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-014",
@@ -1055,7 +1711,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-016",
@@ -1077,7 +1734,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-017",
@@ -1099,7 +1757,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-018",
@@ -1121,7 +1780,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-019",
@@ -1143,7 +1803,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-020",
@@ -1165,7 +1826,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-021",
@@ -1187,7 +1849,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-024",
@@ -1209,7 +1872,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-025",
@@ -1231,7 +1895,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INFRA-026",
@@ -1253,7 +1918,8 @@
       ],
       "owasp": [
         "A05 Security Misconfiguration"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INJ-001",
@@ -1275,7 +1941,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "api"
     }
   ],
   "fixed": [],
@@ -1349,14 +2016,14 @@
       "status": "analyzed",
       "note": "Mapped 8 Critical/High/Medium finding(s) to Verify Explicitly / Least Privilege / Assume Breach themes from scanner output.",
       "finding_ids": [
+        "AUTHZ-001",
+        "AUTHZ-002",
         "CICD-016",
         "CICD-017",
         "CICD-019",
         "CICD-001",
         "CICD-002",
-        "CICD-003",
-        "CICD-004",
-        "CICD-005"
+        "CICD-003"
       ],
       "evidence": []
     },
@@ -1374,9 +2041,12 @@
     },
     {
       "id": "authz",
-      "status": "not_assessed",
-      "note": "No NestJS @UseGuards/@Roles/CanActivate patterns found for automated authz rules.",
-      "finding_ids": [],
+      "status": "analyzed",
+      "note": "Semantic authorization analysis reviewed controllers and endpoints; found 2 authorization/access control finding(s).",
+      "finding_ids": [
+        "AUTHZ-001",
+        "AUTHZ-002"
+      ],
       "evidence": []
     },
     {
@@ -1428,14 +2098,25 @@
     {
       "id": "logging-data",
       "status": "analyzed",
-      "note": "Logging/PII scanner hits: 0. This pass uses automated rules only, not a full DATA audit.",
-      "finding_ids": [],
-      "evidence": [
-        {
-          "file": "README.md",
-          "line": 1
-        }
-      ]
+      "note": "Logging/PII semantic and scanner hits: 15. Review checked client error logging and credential leaks.",
+      "finding_ids": [
+        "DATA-001",
+        "DATA-002",
+        "DATA-003",
+        "DATA-004",
+        "DATA-005",
+        "DATA-006",
+        "DATA-007",
+        "DATA-008",
+        "DATA-009",
+        "DATA-010",
+        "DATA-011",
+        "DATA-012",
+        "DATA-013",
+        "DATA-014",
+        "DATA-015"
+      ],
+      "evidence": []
     },
     {
       "id": "code-scanning",

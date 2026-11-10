@@ -1,7 +1,146 @@
 {
   "repository": "bcgov/nr-results-exam",
   "commit": "2b7c3fb9ee8ef913906386a576c3516c9b89097b",
+  "components": [
+    {
+      "id": "frontend-web-server",
+      "name": "Frontend Web Server",
+      "type": "ingress",
+      "paths": [
+        "frontend/Caddyfile"
+      ],
+      "integrations": [
+        "backend"
+      ]
+    },
+    {
+      "id": "frontend",
+      "name": "Frontend App",
+      "type": "frontend",
+      "paths": [
+        "frontend"
+      ],
+      "integrations": [
+        "backend-api"
+      ]
+    },
+    {
+      "id": "backend",
+      "name": "BACKEND Service",
+      "type": "api",
+      "paths": [
+        "backend"
+      ],
+      "integrations": [
+        "auth-gateway",
+        "database"
+      ]
+    }
+  ],
+  "architecture": {
+    "mermaid": "graph TD\n    subgraph Users[\"Users & Clients\"]\n        UserClient[\"End Users / Browsers\"]\n    end\n    subgraph Presentation[\"Edge & Presentation Layer\"]\n        node_frontend_web_server([\"Frontend Web Server\"])\n        node_frontend[\"Frontend App\"]\n    end\n    UserClient --> Presentation\n    subgraph Application[\"Application Services\"]\n        node_backend[\"BACKEND Service\"]\n    end\n    node_frontend_web_server --> node_backend\n    node_frontend --> node_backend",
+    "components": [
+      {
+        "id": "frontend-web-server",
+        "name": "Frontend Web Server",
+        "type": "ingress",
+        "paths": [
+          "frontend/Caddyfile"
+        ],
+        "integrations": [
+          "backend"
+        ]
+      },
+      {
+        "id": "frontend",
+        "name": "Frontend App",
+        "type": "frontend",
+        "paths": [
+          "frontend"
+        ],
+        "integrations": [
+          "backend-api"
+        ]
+      },
+      {
+        "id": "backend",
+        "name": "BACKEND Service",
+        "type": "api",
+        "paths": [
+          "backend"
+        ],
+        "integrations": [
+          "auth-gateway",
+          "database"
+        ]
+      }
+    ]
+  },
+  "vex_summary": {
+    "total_dependency_findings": 6,
+    "reachable_findings": 5,
+    "unreachable_findings": 1,
+    "unassessed_findings": 0,
+    "reachable_packages": [
+      "minimatch",
+      "stream-json"
+    ],
+    "unreachable_packages": [
+      "glob"
+    ],
+    "unassessed_packages": []
+  },
+  "attack_chains": [
+    {
+      "id": "CHAIN-001",
+      "title": "[root] Reachable Component Flaw to Secret Exfiltration",
+      "severity": "High",
+      "component": "root",
+      "findings": [
+        "INJ-011",
+        "DATA-010"
+      ],
+      "stages": [
+        {
+          "stage": "Library Exploitation",
+          "finding_id": "INJ-011",
+          "description": "Detected calls to child_process from a function argument `cmd`. This could lead to a command injection if the input is user controllable. Try to avoid calls to "
+        },
+        {
+          "stage": "Secret Exfiltration",
+          "finding_id": "DATA-010",
+          "description": "Raw HTTP client error object passed directly to logger"
+        }
+      ],
+      "narrative": "In component 'root', exploiting reachable dependency vulnerability INJ-011 grants code execution access within the container context, leading to extraction of credentials identified in DATA-010.",
+      "remediation": "Upgrade the reachable dependency and rotate the exposed credentials.",
+      "mermaid": "graph LR\n    S1[\"INJ-011: Library Exploitation<br/><i>Detected calls to child_process from a</i>\"]\n    S2[\"DATA-010: Secret Exfiltration<br/><i>Raw HTTP client error object passed di</i>\"]\n    S1 -->|enables| S2\n    S2 -->|Impact| Target[\"[root] Reachable Component Flaw to Secret Exfiltration\"]"
+    }
+  ],
   "findings": [
+    {
+      "id": "DATA-007",
+      "domain": "DATA",
+      "severity": "High",
+      "title": "Potential credential or authorization token disclosure in logger call (Token)",
+      "evidence": [
+        {
+          "file": "frontend/src/services/CognitoAuthService.ts",
+          "line": 187,
+          "snippet": "console.error(`Token refresh failed: ${response.status} - ${errorText}`);"
+        }
+      ],
+      "impact": "Writing tokens, credentials, or raw authorization headers to logs leaks sensitive authentication secrets to log storage and monitoring pipelines.",
+      "recommendation": "Redact authorization tokens and sensitive credential headers prior to emitting log records.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "frontend"
+    },
     {
       "id": "INJ-011",
       "domain": "INJ",
@@ -22,7 +161,8 @@
       ],
       "owasp": [
         "A03 Injection"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-001",
@@ -42,7 +182,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-002",
@@ -62,7 +203,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-003",
@@ -82,7 +224,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-004",
@@ -102,7 +245,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-005",
@@ -122,7 +266,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-006",
@@ -142,7 +287,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-007",
@@ -162,7 +308,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-008",
@@ -182,7 +329,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-009",
@@ -202,7 +350,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-010",
@@ -222,7 +371,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-011",
@@ -242,7 +392,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-012",
@@ -262,7 +413,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-013",
@@ -282,7 +434,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-014",
@@ -302,7 +455,8 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "CICD-015",
@@ -322,26 +476,330 @@
       "cwe": [
         "CWE-1357",
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
-      "id": "DEPS-001",
-      "domain": "DEPS",
+      "id": "DATA-001",
+      "domain": "DATA",
       "severity": "Medium",
-      "title": "glob 13.0.7 affected by GHSA-3g3m-2fjr-6pw4",
+      "title": "Raw HTTP client error object passed directly to logger",
       "evidence": [
         {
-          "file": "backend/package-lock.json",
-          "line": 1856,
-          "snippet": "\"node_modules/glob\": {"
+          "file": "frontend/src/services/CognitoAuthService.ts",
+          "line": 203,
+          "snippet": "console.error('Error refreshing tokens:', error);"
         }
       ],
-      "impact": "Glob: AbortSignal cancellation bypass allows post-timeout filesystem traversal CWE: CWE-400 Aliases: CVE-2026-118773.",
-      "recommendation": "Upgrade glob from 13.0.7 to a patched release per GHSA-3g3m-2fjr-6pw4.",
-      "source": "osv-scanner",
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
       "cwe": [
-        "CWE-400"
-      ]
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "frontend"
+    },
+    {
+      "id": "DATA-002",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "frontend/src/services/CognitoAuthService.ts",
+          "line": 224,
+          "snippet": "console.error('Error checking token expiration:', error);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "frontend"
+    },
+    {
+      "id": "DATA-003",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "frontend/src/services/CognitoAuthService.ts",
+          "line": 293,
+          "snippet": "console.error('Failed to decode id_token payload for storing tokens', error);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "frontend"
+    },
+    {
+      "id": "DATA-004",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "frontend/src/services/CognitoAuthService.ts",
+          "line": 362,
+          "snippet": "console.error('Error parsing ID token:', error);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "frontend"
+    },
+    {
+      "id": "DATA-005",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "frontend/src/services/CognitoAuthService.ts",
+          "line": 400,
+          "snippet": "console.error('OAuth error:', error, urlParams.get('error_description'));"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "frontend"
+    },
+    {
+      "id": "DATA-006",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "frontend/src/services/CognitoAuthService.ts",
+          "line": 432,
+          "snippet": "console.error('Error exchanging code for tokens:', err);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "frontend"
+    },
+    {
+      "id": "DATA-008",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "frontend/src/services/EmailService.ts",
+          "line": 80,
+          "snippet": "console.error('Error sending user report email:', error);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "frontend"
+    },
+    {
+      "id": "DATA-009",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "frontend/src/services/EmailService.ts",
+          "line": 170,
+          "snippet": "console.error('Error sending admin report email:', error);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "frontend"
+    },
+    {
+      "id": "DATA-010",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "scripts/generate-security-report.js",
+          "line": 17,
+          "snippet": "console.error('Warning: Failed to parse reporting-config.json, using defaults.', e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "root"
+    },
+    {
+      "id": "DATA-011",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "scripts/generate-security-report.js",
+          "line": 62,
+          "snippet": "console.error('Warning: Failed to load tests/.zap/rules.tsv', e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "root"
+    },
+    {
+      "id": "DATA-012",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "scripts/generate-security-report.js",
+          "line": 101,
+          "snippet": "console.error('Failed to parse zap-report.json, assuming empty results.', e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "root"
+    },
+    {
+      "id": "DATA-013",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "scripts/generate-security-report.js",
+          "line": 121,
+          "snippet": "console.error('Warning: Failed to read nuclei-results.jsonl', e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "root"
+    },
+    {
+      "id": "DATA-014",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "scripts/generate-security-report.js",
+          "line": 127,
+          "snippet": "console.error('Warning: Failed to read nuclei-results.json', e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "root"
+    },
+    {
+      "id": "DATA-015",
+      "domain": "DATA",
+      "severity": "Medium",
+      "title": "Raw HTTP client error object passed directly to logger",
+      "evidence": [
+        {
+          "file": "scripts/generate-security-report.js",
+          "line": 683,
+          "snippet": "console.error('Failed to compile HTML detailed report.', e);"
+        }
+      ],
+      "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+      "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+      "source": "semantic-analyzer",
+      "cwe": [
+        "CWE-532"
+      ],
+      "owasp": [
+        "A09 Security Logging and Monitoring Failures"
+      ],
+      "component": "root"
     },
     {
       "id": "DEPS-002",
@@ -358,9 +816,14 @@
       "impact": "minimatch has potential denial of service via globparts amplification CWE: CWE-405 Aliases: CVE-2026-118764.",
       "recommendation": "Upgrade minimatch from 10.2.6 to a patched release per GHSA-g3hv-75wg-m249.",
       "source": "osv-scanner",
+      "package": "minimatch",
       "cwe": [
         "CWE-405"
-      ]
+      ],
+      "component": "backend",
+      "reachability": "reachable",
+      "vex_status": "affected",
+      "vex_justification": "Transitively reachable via imported package 'typescript-eslint'."
     },
     {
       "id": "DEPS-003",
@@ -377,9 +840,14 @@
       "impact": "stream-json: pick/ignore/filter/replace filters are O(depth\u00b2) on nested input \u2014 small crafted JSON blocks the event loop for seconds\u2192minutes (DoS) CWE: CWE-407 Aliases: CVE-2026-71429.",
       "recommendation": "Upgrade stream-json from 1.9.1 to a patched release per GHSA-528h-pc64-c93x.",
       "source": "osv-scanner",
+      "package": "stream-json",
       "cwe": [
         "CWE-407"
-      ]
+      ],
+      "component": "backend",
+      "reachability": "reachable",
+      "vex_status": "affected",
+      "vex_justification": "Transitively reachable via imported package 'minio'."
     },
     {
       "id": "DEPS-004",
@@ -396,9 +864,14 @@
       "impact": "stream-json: JSONC parser and verifier re-scan the whole accumulated comment on every input chunk CWE: CWE-407 Aliases: CVE-2026-104182.",
       "recommendation": "Upgrade stream-json from 1.9.1 to a patched release per GHSA-hqr4-qq8f-hg3x.",
       "source": "osv-scanner",
+      "package": "stream-json",
       "cwe": [
         "CWE-407"
-      ]
+      ],
+      "component": "backend",
+      "reachability": "reachable",
+      "vex_status": "affected",
+      "vex_justification": "Transitively reachable via imported package 'minio'."
     },
     {
       "id": "DEPS-005",
@@ -415,12 +888,17 @@
       "impact": "stream-json has a prototype pollution issue: Assembler writes this.current[this.key] on plain objects CWE: CWE-1321 Aliases: CVE-2026-104183.",
       "recommendation": "Upgrade stream-json from 1.9.1 to a patched release per GHSA-mjw6-4jj6-33hc.",
       "source": "osv-scanner",
+      "package": "stream-json",
       "cwe": [
         "CWE-1321"
       ],
       "owasp": [
         "A08 Software and Data Integrity Failures"
-      ]
+      ],
+      "component": "backend",
+      "reachability": "reachable",
+      "vex_status": "affected",
+      "vex_justification": "Transitively reachable via imported package 'minio'."
     },
     {
       "id": "DEPS-006",
@@ -437,9 +915,14 @@
       "impact": "minimatch has potential denial of service via globparts amplification CWE: CWE-405 Aliases: CVE-2026-118764.",
       "recommendation": "Upgrade minimatch from 10.2.6 to a patched release per GHSA-g3hv-75wg-m249.",
       "source": "osv-scanner",
+      "package": "minimatch",
       "cwe": [
         "CWE-405"
-      ]
+      ],
+      "component": "frontend",
+      "reachability": "reachable",
+      "vex_status": "affected",
+      "vex_justification": "Transitively reachable via imported package 'typescript-eslint'."
     },
     {
       "id": "INFRA-002",
@@ -458,7 +941,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "backend"
     },
     {
       "id": "INFRA-004",
@@ -477,7 +961,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-732"
-      ]
+      ],
+      "component": "frontend"
     },
     {
       "id": "INJ-009",
@@ -496,7 +981,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INJ-010",
@@ -515,7 +1001,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-353"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INJ-012",
@@ -534,7 +1021,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-116"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "INJ-013",
@@ -553,7 +1041,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-116"
-      ]
+      ],
+      "component": "root"
     },
     {
       "id": "AUTH-001",
@@ -575,7 +1064,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "backend"
     },
     {
       "id": "AUTH-002",
@@ -597,7 +1087,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "backend"
     },
     {
       "id": "CONFIG-001",
@@ -619,7 +1110,34 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "backend"
+    },
+    {
+      "id": "DEPS-001",
+      "domain": "DEPS",
+      "severity": "Low",
+      "title": "glob 13.0.7 affected by GHSA-3g3m-2fjr-6pw4",
+      "evidence": [
+        {
+          "file": "backend/package-lock.json",
+          "line": 1856,
+          "snippet": "\"node_modules/glob\": {"
+        }
+      ],
+      "impact": "Glob: AbortSignal cancellation bypass allows post-timeout filesystem traversal CWE: CWE-400 Aliases: CVE-2026-118773.",
+      "recommendation": "Upgrade glob from 13.0.7 to a patched release per GHSA-3g3m-2fjr-6pw4.",
+      "source": "osv-scanner",
+      "package": "glob",
+      "cwe": [
+        "CWE-400"
+      ],
+      "component": "backend",
+      "reachability": "unreachable",
+      "vex_status": "not_affected",
+      "vex_justification": "vulnerable_code_not_in_execute_path (unimported transitive dependency with no imported parent callers)",
+      "original_severity": "Medium",
+      "effective_severity": "Low"
     },
     {
       "id": "INFRA-001",
@@ -638,7 +1156,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-250"
-      ]
+      ],
+      "component": "backend"
     },
     {
       "id": "INFRA-003",
@@ -657,7 +1176,8 @@
       "source": "semgrep",
       "cwe": [
         "CWE-250"
-      ]
+      ],
+      "component": "frontend"
     },
     {
       "id": "INJ-001",
@@ -679,7 +1199,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "backend"
     },
     {
       "id": "INJ-002",
@@ -701,7 +1222,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "backend"
     },
     {
       "id": "INJ-003",
@@ -723,7 +1245,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "backend"
     },
     {
       "id": "INJ-004",
@@ -745,7 +1268,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "backend"
     },
     {
       "id": "INJ-005",
@@ -767,7 +1291,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "backend"
     },
     {
       "id": "INJ-006",
@@ -789,7 +1314,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "backend"
     },
     {
       "id": "INJ-007",
@@ -811,7 +1337,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "backend"
     },
     {
       "id": "INJ-008",
@@ -833,7 +1360,8 @@
       ],
       "owasp": [
         "A01 Broken Access Control"
-      ]
+      ],
+      "component": "backend"
     }
   ],
   "fixed": [],
@@ -911,10 +1439,23 @@
     },
     {
       "id": "authz",
-      "status": "not_assessed",
-      "note": "No NestJS @UseGuards/@Roles/CanActivate patterns found for automated authz rules.",
+      "status": "analyzed",
+      "note": "Automated authz rules, not a full RBAC audit: found 3 NestJS/Express/Django authorization/guard hit(s) under the clone.",
       "finding_ids": [],
-      "evidence": []
+      "evidence": [
+        {
+          "file": "backend/__tests__/authMiddleware.test.js",
+          "line": 403
+        },
+        {
+          "file": "backend/__tests__/authMiddleware.test.js",
+          "line": 420
+        },
+        {
+          "file": "backend/middleware/authMiddleware.js",
+          "line": 150
+        }
+      ]
     },
     {
       "id": "injection",
@@ -973,14 +1514,25 @@
     {
       "id": "logging-data",
       "status": "analyzed",
-      "note": "Logging/PII scanner hits: 0. This pass uses automated rules only, not a full DATA audit.",
-      "finding_ids": [],
-      "evidence": [
-        {
-          "file": "README.md",
-          "line": 1
-        }
-      ]
+      "note": "Logging/PII semantic and scanner hits: 15. Review checked client error logging and credential leaks.",
+      "finding_ids": [
+        "DATA-007",
+        "DATA-001",
+        "DATA-002",
+        "DATA-003",
+        "DATA-004",
+        "DATA-005",
+        "DATA-006",
+        "DATA-008",
+        "DATA-009",
+        "DATA-010",
+        "DATA-011",
+        "DATA-012",
+        "DATA-013",
+        "DATA-014",
+        "DATA-015"
+      ],
+      "evidence": []
     },
     {
       "id": "code-scanning",
@@ -1027,12 +1579,12 @@
       "status": "analyzed",
       "note": "osv-scanner osv-scanner ran with 6 result(s). 6 advisory hit(s). Trivy 0.76.1 ran with 3 result(s). 3 vuln(s), 0 misconfig(s). Public proxy for Dependabot until #96. GitHub's own alert list was not read (403/unavailable).",
       "finding_ids": [
-        "DEPS-001",
         "DEPS-002",
         "DEPS-003",
         "DEPS-004",
         "DEPS-005",
-        "DEPS-006"
+        "DEPS-006",
+        "DEPS-001"
       ],
       "evidence": []
     },
@@ -1041,12 +1593,12 @@
       "status": "analyzed",
       "note": "osv-scanner osv-scanner ran with 6 result(s). 6 advisory hit(s). Trivy 0.76.1 ran with 3 result(s). 3 vuln(s), 0 misconfig(s). 6 dependency finding(s) promoted after dedupe.",
       "finding_ids": [
-        "DEPS-001",
         "DEPS-002",
         "DEPS-003",
         "DEPS-004",
         "DEPS-005",
-        "DEPS-006"
+        "DEPS-006",
+        "DEPS-001"
       ],
       "evidence": []
     },

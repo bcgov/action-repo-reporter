@@ -2,14 +2,14 @@
 
 This digest summarizes the scripted security assessment for `bcgov/nr-hydrometric-rating-curve`. The source of truth is the compiled report at [security-assessment.md](security-assessment.md).
 
-Open findings: 31 (Critical 0, High 3, Medium 20, Low 8); confirmed-fixed: 0. Chapters analyzed: 16; not_assessed: 1.
+Open findings: 36 (Critical 0, High 8, Medium 20, Low 8); confirmed-fixed: 0. Chapters analyzed: 17; not_assessed: 0.
 
 Highest-priority items (by severity order in findings.json):
-- CICD-001 (High): Using variable interpolation `${{...}}` with `github` context data in a `run:` step could allow an attacker to inject their own code into the runner. This would
-- INFRA-002 (High): Root file system is not read-only
-- INFRA-009 (High): Root file system is not read-only
-- CICD-002 (Medium): GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks —
-- CICD-003 (Medium): GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks —
+- AUTHZ-001 (High): Unprotected mutating Django view function: rctool_import
+- AUTHZ-002 (High): Unprotected mutating Django view function: rctool_develop_initialize
+- AUTHZ-003 (High): Unprotected mutating Django view function: rctool_develop_autofit
+- AUTHZ-004 (High): Unprotected mutating Django view function: rctool_export_initialize
+- AUTHZ-005 (High): Unprotected mutating Django view function: rctool_export_output
 
 Named coverage gaps:
 - GitHub's own alert list was not read (dependabot: HTTP 403 or unavailable). Public scanner proxy used instead.

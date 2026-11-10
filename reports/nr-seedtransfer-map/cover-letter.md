@@ -2,7 +2,7 @@
 
 This digest summarizes the scripted security assessment for `bcgov/nr-seedtransfer-map`. The source of truth is the compiled report at [security-assessment.md](security-assessment.md).
 
-Open findings: 24 (Critical 0, High 0, Medium 24, Low 0); confirmed-fixed: 0. Chapters analyzed: 16; not_assessed: 1.
+Open findings: 27 (Critical 0, High 0, Medium 26, Low 1); confirmed-fixed: 0. Chapters analyzed: 16; not_assessed: 1.
 
 Highest-priority items (by severity order in findings.json):
 - CICD-001 (Medium): GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks —
