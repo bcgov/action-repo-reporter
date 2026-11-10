@@ -10,6 +10,7 @@ and authentication modules to detect:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import pathlib
 import re
@@ -25,91 +26,135 @@ def _is_ignored(path: pathlib.Path) -> bool:
     return any(p in ignored_parts or p.startswith(".") for p in path.parts)
 
 
-def _safe_read_lines(file_path: pathlib.Path) -> list[str]:
+def _safe_read_lines(file_path: pathlib.Path, repo_root: pathlib.Path | None = None) -> list[str]:
     try:
+        if file_path.is_symlink() or not file_path.is_file():
+            return []
+        if repo_root is not None:
+            resolved = file_path.resolve()
+            root_resolved = repo_root.resolve()
+            if not resolved.is_relative_to(root_resolved):
+                return []
+        if file_path.stat().st_size > 2 * 1024 * 1024:
+            return []
         return file_path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         return []
+
+
+def _is_route_public(route_str: str) -> bool:
+    """Check if route path contains dedicated public/auth segments rather than resource substrings."""
+    segments = {s.lower() for s in re.split(r"[/._-]", route_str.strip("/")) if s}
+    public_segments = {
+        "login", "logout", "token", "auth", "callback", "public",
+        "health", "healthz", "webhook", "register", "signup",
+    }
+    return bool(segments & public_segments)
 
 
 def analyze_authz_nestjs(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
     """Detect unprotected mutating endpoints in NestJS controllers."""
     findings = []
     ts_files = [p for p in repo_dir.rglob("*.controller.ts") if not _is_ignored(p)]
-    # Also check generic .ts files containing @Controller
     all_ts = [p for p in repo_dir.rglob("*.ts") if not _is_ignored(p) and p not in ts_files]
     for p in all_ts:
-        lines = _safe_read_lines(p)
+        lines = _safe_read_lines(p, repo_dir)
         if any("@Controller" in ln for ln in lines):
             ts_files.append(p)
 
+    mutating_verbs = ("@Post", "@Put", "@Delete", "@Patch")
+    guard_terms = ("@UseGuards", "@Roles", "@Public", "@Auth")
+
     for path in sorted(ts_files):
-        lines = _safe_read_lines(path)
+        lines = _safe_read_lines(path, repo_dir)
         rel_path = str(path.relative_to(repo_dir))
-        
-        has_class_controller = False
+
+        in_class = False
         class_has_guard = False
-        class_line = 0
+        class_dec_block: list[str] = []
+        method_dec_block: list[str] = []
 
-        # Scan class-level decorators
         for idx, line in enumerate(lines, 1):
-            if "@Controller" in line:
-                has_class_controller = True
-                # Check preceding lines for @UseGuards or @Roles
-                start = max(0, idx - 10)
-                for prev in lines[start:idx]:
-                    if "@UseGuards" in prev or "@Roles" in prev:
-                        class_has_guard = True
-            if has_class_controller and re.search(r"\bclass\s+\w+", line):
-                class_line = idx
-                break
+            stripped = line.strip()
 
-        if not has_class_controller:
-            continue
-
-        # If class has guard, endpoints inherit protection unless explicitly overridden
-        if class_has_guard:
-            continue
-
-        # Look for mutating methods without route-level guard
-        mutating_verbs = ("@Post", "@Put", "@Delete", "@Patch")
-        for idx, line in enumerate(lines, 1):
-            matched_verb = next((v for v in mutating_verbs if v in line), None)
-            if not matched_verb:
+            # Collect decorator lines
+            if stripped.startswith("@"):
+                if not in_class:
+                    class_dec_block.append(stripped)
+                else:
+                    method_dec_block.append(stripped)
                 continue
 
-            # Check if public auth endpoint (e.g. login, token, callback, refresh, webhook)
-            lower_line = line.lower()
-            if any(term in lower_line for term in ("login", "token", "callback", "refresh", "webhook", "public", "auth/")):
+            # Class declaration
+            m_cls = re.search(r"\bclass\s+(\w+)", line)
+            if m_cls and not in_class:
+                has_ctrl = any("@Controller" in d for d in class_dec_block)
+                if has_ctrl:
+                    in_class = True
+                    class_has_guard = any(
+                        any(term in d for term in ("@UseGuards", "@Roles", "@Auth"))
+                        for d in class_dec_block
+                    )
+                class_dec_block.clear()
                 continue
 
-            # Check preceding 8 lines for method-level @UseGuards, @Roles, or @Public
-            method_guarded = False
-            start = max(0, idx - 8)
-            for prev in lines[start:idx]:
-                if any(k in prev for k in ("@UseGuards", "@Roles", "@Public", "@Auth")):
-                    method_guarded = True
-                    break
+            if not in_class:
+                if not stripped.startswith("//") and not stripped.startswith("/*"):
+                    class_dec_block.clear()
+                continue
 
-            if not method_guarded:
-                snippet = line.strip()
-                if idx < len(lines):
-                    snippet += f"\n{lines[idx].strip()}"
-                findings.append({
-                    "severity": "High",
-                    "title": f"Unprotected mutating endpoint in NestJS controller ({matched_verb.lstrip('@')})",
-                    "evidence": [{
-                        "file": rel_path,
-                        "line": idx,
-                        "snippet": snippet[:200],
-                    }],
-                    "impact": "Unauthenticated or unprivileged callers can execute state-changing actions without token verification or role checks, resulting in broken access control.",
-                    "recommendation": "Decorate the controller or method with `@UseGuards(JwtAuthGuard)` and appropriate role authorization decorators.",
-                    "domain": "AUTHZ",
-                    "source": "semantic-analyzer",
-                    "cwes": [284, 862],
-                    "owasp": "A01 Broken Access Control",
-                })
+            # Method signature: matches `async? methodName(...)`
+            m_method = re.search(
+                r"(?:public\s+|private\s+|protected\s+)?(?:async\s+)?([a-zA-Z0-9_]+)\s*\([^)]*\)",
+                line,
+            )
+            if m_method and method_dec_block:
+                verb = next(
+                    (v for v in mutating_verbs if any(v in d for d in method_dec_block)),
+                    None,
+                )
+                if verb and not class_has_guard:
+                    # Check if method decorators include guard
+                    method_guarded = any(
+                        any(term in d for term in guard_terms)
+                        for d in method_dec_block
+                    )
+                    # Check if any route decorator argument is public
+                    verb_line = next(d for d in method_dec_block if verb in d)
+                    m_route = re.search(r"['\"]([^'\"]+)['\"]", verb_line)
+                    route_path = m_route.group(1) if m_route else ""
+
+                    if not method_guarded and not _is_route_public(route_path):
+                        snippet = f"{verb_line}\n{line.strip()}"
+                        findings.append({
+                            "severity": "High",
+                            "title": f"Unprotected mutating endpoint in NestJS controller ({verb.lstrip('@')})",
+                            "evidence": [{
+                                "file": rel_path,
+                                "line": idx,
+                                "snippet": snippet[:200],
+                            }],
+                            "impact": "Unauthenticated or unprivileged callers can execute state-changing actions without token verification or role checks, resulting in broken access control.",
+                            "recommendation": "Decorate the controller or method with `@UseGuards(JwtAuthGuard)` and appropriate role authorization decorators.",
+                            "domain": "AUTHZ",
+                            "source": "semantic-analyzer",
+                            "cwes": [284, 862],
+                            "owasp": "A01 Broken Access Control",
+                        })
+                method_dec_block.clear()
+                continue
+
+            # Statement boundary: clear method decorator block if non-decorator code intervenes
+            if stripped and not stripped.startswith("//") and not stripped.startswith("/*"):
+                if not any(stripped.startswith(k) for k in ("public", "private", "protected", "async")):
+                    method_dec_block.clear()
+
+            # Class closed
+            if in_class and stripped == "}":
+                in_class = False
+                class_has_guard = False
+                method_dec_block.clear()
+
     return findings
 
 
@@ -129,40 +174,69 @@ def analyze_authz_express(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
     ]
 
     mutating_re = re.compile(
-        r"\b(?:router|app)\.(post|put|delete|patch)\s*\(\s*(['\"][^'\"]+['\"])\s*,",
+        r"\b(router|app)\.(post|put|delete|patch)\s*\(\s*(['\"][^'\"]+['\"])\s*,(.*)",
+        re.I,
+    )
+    middleware_auth_re = re.compile(
+        r"\b(?:auth|authenticate|jwt|verify(?:Token)?|guard|requireAuth|checkRole|isLoggedIn|passport\.authenticate)\b",
+        re.I,
+    )
+    router_use_re = re.compile(
+        r"\b(router|app)\.use\s*\((.*)\)",
         re.I,
     )
 
-    auth_terms = (
-        "auth", "authenticate", "jwt", "verify", "guard", "protect",
-        "isloggedin", "session", "requireauth", "checkrole", "passport",
-    )
-
-    public_terms = ("login", "token", "auth", "callback", "public", "health", "webhook", "register")
-
     for path in sorted(route_files):
-        lines = _safe_read_lines(path)
+        lines = _safe_read_lines(path, repo_dir)
         rel_path = str(path.relative_to(repo_dir))
+
+        router_guarded: set[str] = set()
+
         for idx, line in enumerate(lines, 1):
+            # Check for router-level middleware registrations: router.use(requireAuth)
+            m_use = router_use_re.search(line)
+            if m_use:
+                obj_name = m_use.group(1).lower()
+                use_args = m_use.group(2)
+                if middleware_auth_re.search(use_args):
+                    router_guarded.add(obj_name)
+
             m = mutating_re.search(line)
             if not m:
                 continue
-            verb = m.group(1).upper()
-            route_str = m.group(2).strip("'\"")
 
-            # Skip public auth routes
-            if any(term in route_str.lower() for term in public_terms):
+            obj = m.group(1).lower()
+            verb = m.group(2).upper()
+            route_str = m.group(3).strip("'\"")
+            rest_of_line = m.group(4)
+
+            # If the router or app has file-level auth middleware preceding this route, route is protected
+            if obj in router_guarded:
                 continue
 
-            # Check full statement across lines if needed
-            statement = line
+            # Skip public auth routes by segment match
+            if _is_route_public(route_str):
+                continue
+
+            # Accumulate multi-line route definition if closing paren is on later line
+            statement = rest_of_line
             cur = idx
             while cur < len(lines) and ")" not in statement and cur < idx + 5:
                 statement += " " + lines[cur].strip()
                 cur += 1
 
-            # Check if any middleware matching auth patterns is included
-            has_auth_middleware = any(term in statement.lower() for term in auth_terms)
+            # Extract arguments between the path and the terminal handler
+            # Split statement up to closing paren
+            call_body = statement.split(")", 1)[0]
+            args = [a.strip() for a in call_body.split(",") if a.strip()]
+
+            # If args has <= 1 entry, only the terminal handler was passed (no middleware)
+            # If args has > 1 entries, middlewares are args[:-1]
+            has_auth_middleware = False
+            if len(args) > 1:
+                middleware_args = args[:-1]
+                has_auth_middleware = any(middleware_auth_re.search(arg) for arg in middleware_args)
+
             if not has_auth_middleware:
                 findings.append({
                     "severity": "High",
@@ -179,11 +253,12 @@ def analyze_authz_express(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
                     "cwes": [284, 862],
                     "owasp": "A01 Broken Access Control",
                 })
+
     return findings
 
 
 def analyze_authz_django(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
-    """Detect unprotected mutating views in Django applications."""
+    """Detect unprotected mutating views in Django applications using AST parsing."""
     findings = []
     py_files = [
         p for p in repo_dir.rglob("*.py")
@@ -191,37 +266,73 @@ def analyze_authz_django(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
         and ("views" in p.name.lower() or "viewsets" in p.name.lower() or "api" in p.name.lower())
     ]
 
-    login_decorators = ("@login_required", "@permission_required", "@user_passes_test", "@staff_member_required")
-    drf_auth = ("IsAuthenticated", "IsAdminUser", "permission_classes")
-
     for path in sorted(py_files):
-        lines = _safe_read_lines(path)
+        lines = _safe_read_lines(path, repo_dir)
         rel_path = str(path.relative_to(repo_dir))
+        content = "\n".join(lines)
+        if not content.strip():
+            continue
 
-        # 1. Check Function-Based Views with mutating verbs
-        for idx, line in enumerate(lines, 1):
-            if re.match(r"^\s*def\s+([a-zA-Z0-9_]+)\s*\(\s*request\b", line):
-                fn_name = re.match(r"^\s*def\s+([a-zA-Z0-9_]+)", line).group(1)
-                if any(term in fn_name.lower() for term in ("login", "logout", "token", "auth", "health", "public")):
+        try:
+            tree = ast.parse(content, filename=str(path))
+        except SyntaxError:
+            continue
+
+        for node in tree.body:
+            # 1. Function-Based Views
+            if isinstance(node, ast.FunctionDef):
+                has_request_arg = any(arg.arg == "request" for arg in node.args.args)
+                if not has_request_arg:
                     continue
 
-                # Check preceding 6 lines for auth decorator
-                start = max(0, idx - 7)
-                preceding = " ".join(lines[start:idx - 1])
-                has_dec = any(dec in preceding for dec in login_decorators) or any(a in preceding for a in drf_auth)
+                if _is_route_public(node.name):
+                    continue
 
-                # Check if body handles POST/PUT/DELETE
-                body = " ".join(lines[idx:min(len(lines), idx + 20)])
-                mutating = bool(re.search(r"request\.method\s*in\s*\[?['\"](?:POST|PUT|DELETE|PATCH)", body, re.I))
+                is_protected = False
+                for dec in node.decorator_list:
+                    if isinstance(dec, ast.Name) and dec.id in (
+                        "login_required", "permission_required", "staff_member_required",
+                    ):
+                        is_protected = True
+                    elif isinstance(dec, ast.Call):
+                        fn_name = ""
+                        if isinstance(dec.func, ast.Name):
+                            fn_name = dec.func.id
+                        elif isinstance(dec.func, ast.Attribute):
+                            fn_name = dec.func.attr
+                        if fn_name in ("login_required", "permission_required", "staff_member_required"):
+                            is_protected = True
+                        elif fn_name == "permission_classes" and dec.args:
+                            if isinstance(dec.args[0], (ast.List, ast.Tuple)):
+                                classes = [
+                                    elt.id for elt in dec.args[0].elts
+                                    if isinstance(elt, ast.Name)
+                                ]
+                                if (
+                                    any(c in ("IsAuthenticated", "IsAdminUser") for c in classes)
+                                    and "AllowAny" not in classes
+                                ):
+                                    is_protected = True
 
-                if mutating and not has_dec:
+                # Check if function body contains mutation checks or mutations
+                mutating = False
+                for sub in ast.walk(node):
+                    if isinstance(sub, ast.Compare):
+                        src = ast.unparse(sub)
+                        if "request.method" in src and any(v in src for v in ("POST", "PUT", "DELETE", "PATCH")):
+                            mutating = True
+                            break
+
+                if mutating and not is_protected:
+                    line_no = node.lineno
+                    snippet = lines[line_no - 1].strip() if line_no <= len(lines) else f"def {node.name}(request):"
                     findings.append({
                         "severity": "High",
-                        "title": f"Unprotected mutating Django view function: {fn_name}",
+                        "title": f"Unprotected mutating Django view function: {node.name}",
                         "evidence": [{
                             "file": rel_path,
-                            "line": idx,
-                            "snippet": line.strip()[:200],
+                            "line": line_no,
+                            "snippet": snippet[:200],
                         }],
                         "impact": "View executes database mutations without enforcing user authentication or permission checks, exposing endpoints to unauthenticated callers.",
                         "recommendation": "Decorate the view with `@login_required` or apply DRF permission classes requiring authentication.",
@@ -231,41 +342,69 @@ def analyze_authz_django(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
                         "owasp": "A01 Broken Access Control",
                     })
 
-        # 2. Check Class-Based Views / DRF ViewSets
-        for idx, line in enumerate(lines, 1):
-            m = re.match(r"^\s*class\s+([a-zA-Z0-9_]+)\s*\(([^)]+)\):", line)
-            if not m:
-                continue
-            cls_name = m.group(1)
-            bases = m.group(2)
-            if not any(b in bases for b in ("View", "APIView", "ViewSet", "ModelViewSet")):
-                continue
+            # 2. Class-Based Views / DRF ViewSets
+            elif isinstance(node, ast.ClassDef):
+                base_names = []
+                for b in node.bases:
+                    if isinstance(b, ast.Name):
+                        base_names.append(b.id)
+                    elif isinstance(b, ast.Attribute):
+                        base_names.append(b.attr)
 
-            # Check if class has mutating methods
-            class_body = " ".join(lines[idx:min(len(lines), idx + 40)])
-            has_mutating_method = bool(re.search(r"\bdef\s+(?:post|put|delete|patch|create|update|destroy)\s*\(", class_body))
-            if not has_mutating_method:
-                continue
+                if not any(b in ("View", "APIView", "ViewSet", "ModelViewSet") for b in base_names):
+                    continue
 
-            has_auth_mixin = any(m in bases for m in ("LoginRequiredMixin", "PermissionRequiredMixin"))
-            has_permission_classes = "permission_classes" in class_body and not "AllowAny" in class_body
+                has_auth_mixin = any(
+                    m in ("LoginRequiredMixin", "PermissionRequiredMixin") for m in base_names
+                )
 
-            if not has_auth_mixin and not has_permission_classes:
-                findings.append({
-                    "severity": "High",
-                    "title": f"Django class-based view lacking authentication or permission classes: {cls_name}",
-                    "evidence": [{
-                        "file": rel_path,
-                        "line": idx,
-                        "snippet": line.strip()[:200],
-                    }],
-                    "impact": "State-changing class-based view does not enforce authentication mixins or permission classes, allowing unauthenticated API invocation.",
-                    "recommendation": "Add `LoginRequiredMixin` or declare `permission_classes = [IsAuthenticated]` on the view.",
-                    "domain": "AUTHZ",
-                    "source": "semantic-analyzer",
-                    "cwes": [284, 862],
-                    "owasp": "A01 Broken Access Control",
-                })
+                # Inspect class body exclusively for mutating methods and permission_classes
+                has_mutating_method = any(
+                    isinstance(sub, ast.FunctionDef)
+                    and sub.name in ("post", "put", "delete", "patch", "create", "update", "destroy")
+                    for sub in node.body
+                )
+                if not has_mutating_method:
+                    continue
+
+                perm_classes: list[str] = []
+                has_perm_attr = False
+                for sub in node.body:
+                    if isinstance(sub, ast.Assign):
+                        for tgt in sub.targets:
+                            if isinstance(tgt, ast.Name) and tgt.id == "permission_classes":
+                                has_perm_attr = True
+                                if isinstance(sub.value, (ast.List, ast.Tuple)):
+                                    perm_classes = [
+                                        elt.id for elt in sub.value.elts
+                                        if isinstance(elt, ast.Name)
+                                    ]
+
+                is_protected = has_auth_mixin or (
+                    has_perm_attr
+                    and len(perm_classes) > 0
+                    and "AllowAny" not in perm_classes
+                    and any(c in ("IsAuthenticated", "IsAdminUser") for c in perm_classes)
+                )
+
+                if not is_protected:
+                    line_no = node.lineno
+                    snippet = lines[line_no - 1].strip() if line_no <= len(lines) else f"class {node.name}:"
+                    findings.append({
+                        "severity": "High",
+                        "title": f"Django class-based view lacking authentication or permission classes: {node.name}",
+                        "evidence": [{
+                            "file": rel_path,
+                            "line": line_no,
+                            "snippet": snippet[:200],
+                        }],
+                        "impact": "State-changing class-based view does not enforce authentication mixins or permission classes, allowing unauthenticated API invocation.",
+                        "recommendation": "Add `LoginRequiredMixin` or declare `permission_classes = [IsAuthenticated]` on the view.",
+                        "domain": "AUTHZ",
+                        "source": "semantic-analyzer",
+                        "cwes": [284, 862],
+                        "owasp": "A01 Broken Access Control",
+                    })
 
     return findings
 
@@ -278,51 +417,99 @@ def analyze_sensitive_logging(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
         if p.suffix in (".ts", ".js", ".py") and not _is_ignored(p)
     ]
 
+    # Matches bare error object arguments passed to logger (e.g. logger.error(err) or logger.error(err, context))
     raw_err_re = re.compile(
-        r"\b(?:logger|console)\.(?:error|warn|debug|info)\s*\(\s*(?:err|error|axiosError|e)\s*[,)]"
+        r"\b(?:logger|console)\.(?:error|warn|debug|info)\s*\((?:[^)]*,\s*)?\b(err|error|axiosError|e)\b(?!\s*[:.\[])(?:\s*[,)])",
+        re.I,
     )
 
-    token_log_re = re.compile(
-        r"\b(?:logger|console)\.(?:log|info|debug|warn|error)\s*\([^)]*\b(token|jwt|accessToken|refreshToken|bearer|req\.headers(?:\.authorization)?|client_secret)\b",
+    logger_call_re = re.compile(
+        r"\b(?:logger|console)\.(?:log|info|debug|warn|error)\s*\((.*)\)",
         re.I,
     )
 
     for path in sorted(code_files):
-        lines = _safe_read_lines(path)
+        lines = _safe_read_lines(path, repo_dir)
         rel_path = str(path.relative_to(repo_dir))
         content = "\n".join(lines)
 
-        # 1. Raw error object logging in files using HTTP clients (axios/fetch/requests)
+        # 1. Raw HTTP client error object logging
         has_http_client = bool(re.search(r"\b(?:axios|fetch|request|urllib|httpx)\b", content, re.I))
         if has_http_client:
             for idx, line in enumerate(lines, 1):
                 if raw_err_re.search(line):
-                    # Check if error message is extracted or whole object passed
-                    if not any(prop in line for prop in (".message", ".code", ".status", ".stack")):
-                        findings.append({
-                            "severity": "Medium",
-                            "title": "Raw HTTP client error object passed directly to logger",
-                            "evidence": [{
-                                "file": rel_path,
-                                "line": idx,
-                                "snippet": line.strip()[:200],
-                            }],
-                            "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
-                            "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
-                            "domain": "DATA",
-                            "source": "semantic-analyzer",
-                            "cwes": [532],
-                            "owasp": "A09 Security Logging and Monitoring Failures",
-                        })
+                    findings.append({
+                        "severity": "Medium",
+                        "title": "Raw HTTP client error object passed directly to logger",
+                        "evidence": [{
+                            "file": rel_path,
+                            "line": idx,
+                            "snippet": line.strip()[:200],
+                        }],
+                        "impact": "Serializing raw HTTP client error objects directly to logs exposes full request configurations, which frequently contain Authorization headers and Bearer tokens.",
+                        "recommendation": "Log only `error.message` or `error.code` rather than serializing the entire HTTP error object.",
+                        "domain": "DATA",
+                        "source": "semantic-analyzer",
+                        "cwes": [532],
+                        "owasp": "A09 Security Logging and Monitoring Failures",
+                    })
 
-        # 2. Direct token / authorization header logging
+        # 2. Direct token / authorization header logging (excluding static string literals)
         for idx, line in enumerate(lines, 1):
-            m = token_log_re.search(line)
-            if m:
-                # Filter out obvious false positives like token.id or token.length or test tokens
-                matched_kw = m.group(1)
-                if any(fp in line.lower() for fp in ("token.length", "token.id", "token.type", "totallength", "token count")):
-                    continue
+            m_call = logger_call_re.search(line)
+            if not m_call:
+                continue
+
+            arg_content = m_call.group(1).strip()
+            is_leak = False
+            matched_kw = ""
+
+            # Check interpolation in template literals or f-strings
+            m_tmpl = re.search(
+                r'[`"].*?\$\{[^}]*\b(token|jwt|accessToken|refreshToken|bearer|client_secret)\b[^}]*\}.*?[`"]',
+                arg_content,
+                re.I,
+            )
+            if m_tmpl:
+                is_leak = True
+                matched_kw = m_tmpl.group(1)
+
+            m_fstr = re.search(
+                r'f[\'"].*?\{[^}]*\b(token|jwt|accessToken|refreshToken|bearer|client_secret)\b[^}]*\}.*?[\'"]',
+                arg_content,
+                re.I,
+            )
+            if m_fstr:
+                is_leak = True
+                matched_kw = m_fstr.group(1)
+
+            # Check for header authorization expression
+            if not is_leak and re.search(
+                r"\breq\.headers(?:\.authorization|\[[\"']authorization[\"']\])",
+                arg_content,
+                re.I,
+            ):
+                is_leak = True
+                matched_kw = "req.headers.authorization"
+
+            # Check for token variables outside static string literals
+            if not is_leak:
+                # Strip ordinary non-interpolated string literals
+                stripped = re.sub(r'"(?:[^"\\]|\\.)*"', '""', arg_content)
+                stripped = re.sub(r"'(?:[^'\\]|\\.)*'", "''", stripped)
+                m_var = re.search(
+                    r"\b(token|jwt|accessToken|refreshToken|bearer|client_secret)\b(?!\s*[:.\[])",
+                    stripped,
+                    re.I,
+                )
+                if m_var:
+                    # Filter out non-sensitive metric names like tokenCount or totalLength
+                    var_name = m_var.group(1)
+                    if not any(fp in line.lower() for fp in ("token.length", "token.id", "tokencount")):
+                        is_leak = True
+                        matched_kw = var_name
+
+            if is_leak:
                 findings.append({
                     "severity": "High",
                     "title": f"Potential credential or authorization token disclosure in logger call ({matched_kw})",
@@ -355,13 +542,26 @@ def analyze_token_crypto_hygiene(repo_dir: pathlib.Path) -> list[dict[str, Any]]
         re.I,
     )
 
-    fallback_secret_re = re.compile(
-        r"\b(?:process\.env\.(?:JWT_SECRET|SECRET_KEY|TOKEN_SECRET)|os\.environ\.get\(['\"](?:JWT_SECRET|SECRET_KEY|TOKEN_SECRET)['\"]\))\s*(?:\|\||\?\?|,)\s*(['\"][^'\"]{3,}['\"])",
-        re.I,
-    )
+    fallback_secret_patterns = [
+        # Python: os.environ.get('SECRET_KEY', 'default') inside call
+        re.compile(
+            r"os\.environ\.get\(\s*['\"](?:JWT_SECRET|SECRET_KEY|TOKEN_SECRET)['\"]\s*,\s*['\"][^'\"]{3,}['\"]\s*\)",
+            re.I,
+        ),
+        # Python: os.environ.get('SECRET_KEY') or 'default'
+        re.compile(
+            r"(?:os\.environ\.get\(\s*['\"](?:JWT_SECRET|SECRET_KEY|TOKEN_SECRET)['\"][^)]*\)|os\.environ\[\s*['\"](?:JWT_SECRET|SECRET_KEY|TOKEN_SECRET)['\"]\s*\])\s*or\s*['\"][^'\"]{3,}['\"]",
+            re.I,
+        ),
+        # JavaScript / TypeScript: process.env.SECRET || 'default' or ?? 'default'
+        re.compile(
+            r"process\.env\.(?:JWT_SECRET|SECRET_KEY|TOKEN_SECRET)\s*(?:\|\||\?\?)\s*['\"][^'\"]{3,}['\"]",
+            re.I,
+        ),
+    ]
 
     for path in sorted(code_files):
-        lines = _safe_read_lines(path)
+        lines = _safe_read_lines(path, repo_dir)
         rel_path = str(path.relative_to(repo_dir))
 
         for idx, line in enumerate(lines, 1):
@@ -385,9 +585,7 @@ def analyze_token_crypto_hygiene(repo_dir: pathlib.Path) -> list[dict[str, Any]]
                 })
 
             # Hardcoded fallback secret check
-            m_sec = fallback_secret_re.search(line)
-            if m_sec:
-                secret_val = m_sec.group(1)
+            if any(p.search(line) for p in fallback_secret_patterns):
                 findings.append({
                     "severity": "High",
                     "title": "Hardcoded fallback secret for cryptographic token signing",

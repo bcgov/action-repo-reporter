@@ -816,6 +816,115 @@ class SemanticAnalyzersTests(unittest.TestCase):
             self.assertIn("CRYPTO", domains)
             self.assertIn("AUTH", domains)
 
+    def test_copilot_regression_edge_cases(self):
+        sem, _, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+
+            # 1. Symlink escape check
+            (t / "external").mkdir()
+            (t / "external" / "leak.ts").write_text("@Controller('leak')\nexport class LeakController { @Post() save() {} }")
+            src_dir = t / "src"
+            src_dir.mkdir()
+            (src_dir / "symlink.ts").symlink_to(t / "external" / "leak.ts")
+            # Should not follow symlinks outside/inside without regular file
+            self.assertEqual([], sem.analyze_authz_nestjs(src_dir))
+
+            # 2. NestJS decorator ordering: @Controller followed by @UseGuards protects class
+            ctrl_file = src_dir / "users.controller.ts"
+            ctrl_file.write_text(
+                "@Controller('users')\n"
+                "@UseGuards(JwtAuthGuard)\n"
+                "export class UsersController {\n"
+                "  @Post()\n"
+                "  create() { return true; }\n"
+                "}\n"
+            )
+            self.assertEqual([], sem.analyze_authz_nestjs(t))
+
+            # 3. NestJS method decorator block scoping: guarded method does not protect next method
+            items_ctrl = src_dir / "items.controller.ts"
+            items_ctrl.write_text(
+                "@Controller('items')\n"
+                "export class ItemsController {\n"
+                "  @UseGuards(AuthGuard)\n"
+                "  @Post()\n"
+                "  create() { return true; }\n"
+                "  @Delete(':id')\n"
+                "  remove() { return true; }\n"
+                "}\n"
+            )
+            findings = sem.analyze_authz_nestjs(t)
+            self.assertEqual(1, len(findings))
+            self.assertIn("Delete", findings[0]["title"])
+
+            # 4. Express: resource routes /authors and /publications are NOT exempted as auth
+            route_f = src_dir / "resources.router.ts"
+            route_f.write_text(
+                "import express from 'express';\n"
+                "const router = express.Router();\n"
+                "router.post('/authors', saveAuthor);\n"
+                "router.delete('/publications/:id', deletePub);\n"
+            )
+            exp_findings = sem.analyze_authz_express(t)
+            self.assertEqual(2, len(exp_findings))
+
+            # 5. Express: router.use(requireAuth) protects downstream routes
+            guarded_router = src_dir / "guarded.router.ts"
+            guarded_router.write_text(
+                "import express from 'express';\n"
+                "const router = express.Router();\n"
+                "router.use(requireAuth);\n"
+                "router.post('/items', createHandler);\n"
+            )
+            self.assertEqual(2, len(sem.analyze_authz_express(t))) # Still only 2 from resources.router.ts
+
+            # 6. Django: request.method == 'POST' recognized; permission_classes = [] or [AllowAny] flagged
+            py_views = t / "views.py"
+            py_views.write_text(
+                "from rest_framework.views import APIView\n"
+                "from rest_framework.permissions import AllowAny, IsAuthenticated\n"
+                "def func_post_equality(request):\n"
+                "    if request.method == 'POST':\n"
+                "        Item.objects.create()\n"
+                "class EmptyPermView(APIView):\n"
+                "    permission_classes = []\n"
+                "    def post(self, request):\n"
+                "        pass\n"
+                "class AllowAnyPermView(APIView):\n"
+                "    permission_classes = [AllowAny]\n"
+                "    def post(self, request):\n"
+                "        pass\n"
+                "class ProtectedView(APIView):\n"
+                "    permission_classes = [IsAuthenticated]\n"
+                "    def post(self, request):\n"
+                "        pass\n"
+            )
+            dj_findings = sem.analyze_authz_django(t)
+            self.assertEqual(3, len(dj_findings))
+
+            # 7. Sensitive logging: string literal labels not flagged, but raw error objects are
+            log_test = src_dir / "logger_test.ts"
+            log_test.write_text(
+                "import axios from 'axios';\n"
+                "logger.warn('Invalid token');\n"
+                "console.info('JWT validation failed');\n"
+                "logger.error(err, err.message);\n"
+            )
+            data_findings = sem.analyze_sensitive_logging(t)
+            self.assertEqual(1, len(data_findings))
+            self.assertEqual("Raw HTTP client error object passed directly to logger", data_findings[0]["title"])
+
+            # 8. Token crypto hygiene: Python os.environ.get fallback forms
+            py_sec = t / "secrets.py"
+            py_sec.write_text(
+                "import os\n"
+                "s1 = os.environ.get('SECRET_KEY', 'insecure-default')\n"
+                "s2 = os.environ.get('TOKEN_SECRET') or 'fallback-secret'\n"
+            )
+            crypto_findings = sem.analyze_token_crypto_hygiene(t)
+            self.assertEqual(2, len(crypto_findings))
+
     def test_full_compiler_and_chapter_validation_with_semantic_findings(self):
         _, cf, vc, rr = self.load_modules()
         with tempfile.TemporaryDirectory() as tmp:
