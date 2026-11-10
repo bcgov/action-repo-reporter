@@ -709,5 +709,170 @@ class ComponentTopologyTests(unittest.TestCase):
             self.assertEqual("django-app", cc.attribute_finding_to_component(f_view, comps2))
 
 
+class SemanticAnalyzersTests(unittest.TestCase):
+    def load_modules(self):
+        spec_sem = importlib.util.spec_from_file_location("sem", ROOT / "scripts/analyze-semantic-domains.py")
+        mod_sem = importlib.util.module_from_spec(spec_sem)
+        spec_sem.loader.exec_module(mod_sem)
+
+        spec_cf = importlib.util.spec_from_file_location("cf", ROOT / "scripts/compile-findings.py")
+        mod_cf = importlib.util.module_from_spec(spec_cf)
+        spec_cf.loader.exec_module(mod_cf)
+
+        spec_vc = importlib.util.spec_from_file_location("vc", ROOT / "scripts/validate-chapters.py")
+        mod_vc = importlib.util.module_from_spec(spec_vc)
+        spec_vc.loader.exec_module(mod_vc)
+
+        spec_rr = importlib.util.spec_from_file_location("rr", ROOT / "scripts/render-report.py")
+        mod_rr = importlib.util.module_from_spec(spec_rr)
+        spec_rr.loader.exec_module(mod_rr)
+        return mod_sem, mod_cf, mod_vc, mod_rr
+
+    def test_nestjs_route_protection_analyzer(self):
+        sem, _, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            ctrl = t / "src" / "items.controller.ts"
+            ctrl.parent.mkdir(parents=True)
+            ctrl.write_text(
+                "@Controller('items')\n"
+                "export class ItemsController {\n"
+                "  @Post('create')\n"
+                "  createItem(@Body() dto: any) { return true; }\n"
+                "\n"
+                "  @UseGuards(JwtAuthGuard)\n"
+                "  @Put(':id')\n"
+                "  updateItem() { return true; }\n"
+                "\n"
+                "  @Post('login')\n"
+                "  login() { return true; }\n"
+                "}\n"
+            )
+            findings = sem.analyze_authz_nestjs(t)
+            self.assertEqual(1, len(findings))
+            self.assertEqual("High", findings[0]["severity"])
+            self.assertIn("createItem", findings[0]["evidence"][0]["snippet"])
+            self.assertEqual("AUTHZ", findings[0]["domain"])
+
+    def test_express_route_protection_analyzer(self):
+        sem, _, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            router_file = t / "src" / "api.router.ts"
+            router_file.parent.mkdir(parents=True)
+            router_file.write_text(
+                "import express from 'express';\n"
+                "const router = express.Router();\n"
+                "router.post('/users', createHandler);\n"
+                "router.post('/login', authHandler);\n"
+                "router.put('/users/:id', verifyToken, updateHandler);\n"
+            )
+            findings = sem.analyze_authz_express(t)
+            self.assertEqual(1, len(findings))
+            self.assertIn("/users", findings[0]["title"])
+            self.assertEqual("AUTHZ", findings[0]["domain"])
+
+    def test_django_views_authorization_analyzer(self):
+        sem, _, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            views_file = t / "myapp" / "views.py"
+            views_file.parent.mkdir(parents=True)
+            views_file.write_text(
+                "from django.http import HttpResponse\n"
+                "def mutate_resource(request):\n"
+                "    if request.method in ['POST', 'PUT']:\n"
+                "        return HttpResponse('mutated')\n"
+                "    return HttpResponse('ok')\n"
+                "\n"
+                "class UnprotectedAPIView(APIView):\n"
+                "    def post(self, request):\n"
+                "        return Response('created')\n"
+            )
+            findings = sem.analyze_authz_django(t)
+            self.assertEqual(2, len(findings))
+            self.assertTrue(all(f["domain"] == "AUTHZ" for f in findings))
+
+    def test_sensitive_logging_and_token_hygiene(self):
+        sem, _, _, _ = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            log_file = t / "src" / "client.ts"
+            log_file.parent.mkdir(parents=True)
+            log_file.write_text(
+                "import axios from 'axios';\n"
+                "try {\n"
+                "  await axios.get('/api');\n"
+                "} catch (err) {\n"
+                "  logger.error(err);\n"
+                "}\n"
+                "console.log('Got bearer token', token);\n"
+                "if (token === expectedToken) { authenticate(); }\n"
+                "const secret = process.env.JWT_SECRET || 'insecure-default-key';\n"
+            )
+            findings = sem.analyze_semantic_domains(t)
+            domains = {f["domain"] for f in findings}
+            self.assertIn("DATA", domains)
+            self.assertIn("CRYPTO", domains)
+            self.assertIn("AUTH", domains)
+
+    def test_full_compiler_and_chapter_validation_with_semantic_findings(self):
+        _, cf, vc, rr = self.load_modules()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "target"; root.mkdir()
+            (root / "README.md").write_text("# Demo Project\nArchitecture info.\n")
+            (root / "package.json").write_text('{"name": "demo", "engines": {"node": ">=20"}}')
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / ".github" / "workflows" / "ci.yml").write_text("name: CI\non: push\njobs: {}\n")
+
+            # NestJS unprotected route
+            ctrl = root / "api" / "src" / "fom.controller.ts"
+            ctrl.parent.mkdir(parents=True)
+            ctrl.write_text(
+                "@Controller('fom')\n"
+                "export class FomController {\n"
+                "  @Post('update')\n"
+                "  updateRecord() { return true; }\n"
+                "}\n"
+            )
+            # Sensitive logging
+            log_f = root / "api" / "src" / "logger.ts"
+            log_f.write_text(
+                "import axios from 'axios';\n"
+                "function logCall(err: any, token: string) {\n"
+                "  logger.error(err);\n"
+                "  console.log('Session accessToken: ', token);\n"
+                "}\n"
+            )
+            ev = pathlib.Path(tmp) / "evidence"; ev.mkdir()
+
+            compiler = cf.Compiler("bcgov/test-semantic", root, ev)
+            data = compiler.run()
+
+            # Verify semantic findings were ingested
+            finding_ids = [f["id"] for f in data["findings"]]
+            self.assertTrue(any(fid.startswith("AUTHZ") for fid in finding_ids))
+            self.assertTrue(any(fid.startswith("DATA") for fid in finding_ids))
+
+            # Verify authz chapter status is analyzed
+            authz_ch = next(c for c in data["chapters"] if c["id"] == "authz")
+            self.assertEqual("analyzed", authz_ch["status"])
+            self.assertTrue(len(authz_ch["finding_ids"]) > 0)
+
+            # Verify logging-data chapter status is analyzed
+            data_ch = next(c for c in data["chapters"] if c["id"] == "logging-data")
+            self.assertEqual("analyzed", data_ch["status"])
+            self.assertTrue(len(data_ch["finding_ids"]) > 0)
+
+            # Verify report renders cleanly
+            md = rr.render(data)
+            self.assertIn("## authz", md)
+            self.assertIn("## logging-data", md)
+
+            # Verify validate-chapters passes with zero errors
+            errors = vc.validate(data, md, root, ev)
+            self.assertEqual([], errors)
+
+
 if __name__ == "__main__":
     unittest.main()

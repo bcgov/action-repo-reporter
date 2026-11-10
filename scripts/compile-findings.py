@@ -35,6 +35,16 @@ else:
     def attribute_finding_to_component(finding: dict[str, Any], components: list[dict[str, Any]]) -> str:
         return "root"
 
+_semantic_path = pathlib.Path(__file__).resolve().parent / "analyze-semantic-domains.py"
+if _semantic_path.is_file():
+    _spec_sem = importlib.util.spec_from_file_location("analyze_semantic_domains", _semantic_path)
+    _mod_sem = importlib.util.module_from_spec(_spec_sem)
+    _spec_sem.loader.exec_module(_mod_sem)
+    analyze_semantic_domains = _mod_sem.analyze_semantic_domains
+else:
+    def analyze_semantic_domains(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
+        return []
+
 CHAPTERS = (
     "architecture", "cicd", "zero-trust", "authn", "authz", "injection",
     "configuration", "cryptography", "secrets", "logging-data", "code-scanning",
@@ -697,17 +707,26 @@ class Compiler:
 
     def authz_file_checks(self):
         evidence, guard_hits = [], 0
-        for path in sorted(self.root.rglob("*.ts")):
-            if any(part in ("node_modules", "dist") or part.startswith(".") for part in path.parts):
+        patterns = (
+            r"@UseGuards\s*\(|implements\s+CanActivate|@Roles\s*\(",
+            r"@login_required|@permission_required|LoginRequiredMixin|permission_classes",
+            r"passport\.authenticate|verifyToken|jwt\.verify|requireAuth",
+        )
+        combined_re = re.compile("|".join(patterns))
+
+        for path in sorted(self.root.rglob("*")):
+            if path.suffix not in (".ts", ".js", ".py"):
+                continue
+            if any(part in ("node_modules", "dist", ".git", "venv", "__pycache__", "tests", "spec") or part.startswith(".") for part in path.parts):
                 continue
             text = safe_text(self.root, str(path.relative_to(self.root)))
             if text is None:
                 continue
-            if not re.search(r"@UseGuards\s*\(|implements\s+CanActivate|@Roles\s*\(", text):
+            if not combined_re.search(text):
                 continue
             rel = str(path.relative_to(self.root))
             for i, ln in enumerate(text.splitlines(), 1):
-                if re.search(r"@UseGuards\s*\(|implements\s+CanActivate|@Roles\s*\(", ln):
+                if combined_re.search(ln):
                     ev = cite(self.root, rel, i, ln.strip())
                     if ev:
                         evidence.append(ev)
@@ -716,11 +735,41 @@ class Compiler:
                         break
             if len(evidence) >= 8:
                 break
+        framework_note = "NestJS/Express/Django" if guard_hits else "route"
         note = (
             f"Automated authz rules, not a full RBAC audit: found {guard_hits} "
-            f"NestJS @UseGuards/@Roles/CanActivate hit(s) under the clone."
+            f"{framework_note} authorization/guard hit(s) under the clone."
         )
         return evidence, note
+
+    def ingest_semantic_domains(self):
+        raw_findings = analyze_semantic_domains(self.root)
+        prefix_to_domain = {
+            "AUTHZ": "authz",
+            "DATA": "logging-data",
+            "AUTH": "authn",
+            "CRYPTO": "cryptography",
+        }
+        for rf in raw_findings:
+            ev_list = []
+            for ev in rf.get("evidence", []):
+                c = cite(self.root, ev.get("file"), ev.get("line"), ev.get("snippet"))
+                if c:
+                    ev_list.append(c)
+            if not ev_list:
+                continue
+            domain_prefix = rf.get("domain", "AUTHZ")
+            domain_name = prefix_to_domain.get(domain_prefix, "authz")
+            self._add_finding(
+                domain=domain_name,
+                severity=rf.get("severity", "Medium"),
+                title=rf.get("title", "Semantic finding"),
+                evidence=ev_list,
+                impact=rf.get("impact", "Potential security flaw detected via semantic analysis."),
+                recommendation=rf.get("recommendation", "Review and apply recommended security controls."),
+                source=rf.get("source", "semantic-analyzer"),
+                cwes=rf.get("cwes", []),
+            )
 
     def public_inventory(self):
         arch_ev = []
@@ -853,7 +902,14 @@ class Compiler:
             "evidence": need_ev(auth_ids + [e["id"] for e in auth_fixed], arch_ev),
         })
 
-        if authz_ev:
+        authz_ids = by_domain.get("authz", [])
+        if authz_ids:
+            chapters.append({
+                "id": "authz", "status": "analyzed",
+                "note": f"Semantic authorization analysis reviewed controllers and endpoints; found {len(authz_ids)} authorization/access control finding(s).",
+                "finding_ids": authz_ids, "evidence": need_ev(authz_ids, authz_ev or arch_ev),
+            })
+        elif authz_ev:
             chapters.append({
                 "id": "authz", "status": "analyzed", "note": authz_note,
                 "finding_ids": [], "evidence": authz_ev[:5],
@@ -861,7 +917,7 @@ class Compiler:
         else:
             chapters.append({
                 "id": "authz", "status": "not_assessed",
-                "note": "No NestJS @UseGuards/@Roles/CanActivate patterns found for automated authz rules.",
+                "note": "No NestJS, Express, or Django authorization patterns or endpoints found to assess.",
                 "finding_ids": [], "evidence": [],
             })
 
@@ -915,7 +971,7 @@ class Compiler:
         chapters.append({
             "id": "logging-data",
             "status": "analyzed" if (data_ids or arch_ev) else "not_assessed",
-            "note": f"Logging/PII scanner hits: {len(data_ids)}. This pass uses automated rules only, not a full DATA audit.",
+            "note": f"Logging/PII semantic and scanner hits: {len(data_ids)}. Review checked client error logging and credential leaks.",
             "finding_ids": data_ids, "evidence": need_ev(data_ids, arch_ev),
         })
 
@@ -1038,6 +1094,7 @@ class Compiler:
         self.ingest_trivy()
         self.ingest_github_alerts()
         self.seed_auth_crypto()
+        self.ingest_semantic_domains()
         inventory = self.public_inventory()
         self.findings.sort(key=lambda f: (SEVERITY_RANK.get(f["severity"], 9), f["id"]))
 
