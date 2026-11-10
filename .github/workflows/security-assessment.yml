@@ -127,16 +127,38 @@ jobs:
             --report-link "security-assessment.md" \
             || echo "::warning::digest step returned non-zero; continuing without digest"
 
+      - name: Artifact name
+        if: always()
+        id: art
+        env:
+          TARGET_REPOSITORY: ${{ inputs.target_repository }}
+        run: |
+          set -euo pipefail
+          # Artifact names cannot contain '/'.
+          echo "name=$(printf '%s' "$TARGET_REPOSITORY" | tr '/' '-')-security-assessment" >> "$GITHUB_OUTPUT"
+
+      - name: Upload assessment
+        id: upload
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.art.outputs.name }}
+          path: |
+            reports/findings.json
+            reports/score.json
+            reports/security-assessment.md
+            reports/cover-letter.md
+            evidence/*.json
+            evidence/NOTES.txt
+          if-no-files-found: error
+
       - name: Publish report to step summary
         if: always()
         run: |
           set -euo pipefail
           repo="${{ inputs.target_repository }}"
           art_name="$(printf '%s' "$repo" | tr '/' '-')-security-assessment"
-          server_url="${{ github.server_url }}"
-          server_repo="${{ github.repository }}"
-          run_id="${{ github.run_id }}"
-          art_url="${server_url}/${server_repo}/actions/runs/${run_id}#artifacts"
+          art_url="${{ steps.upload.outputs.artifact-url }}"
 
           # If substance or scoring validation failed, clearly label output as diagnostic triage only
           if [ "${{ steps.substance.conclusion }}" != "success" ] || [ "${{ steps.score.conclusion }}" != "success" ]; then
@@ -163,35 +185,17 @@ jobs:
             fixed="$(jq -r '.fixed | length' reports/findings.json 2>/dev/null || echo "0")"
           fi
 
+          if [ -n "$art_url" ]; then
+            art_link="[\`$art_name\`]($art_url)"
+          else
+            art_link="\`$art_name\`"
+          fi
+
           {
             echo "### Security Assessment: \`$repo\`"
             echo ""
             echo "| Target | Score | Critical | High | Medium | Low | Total Findings | Fixed | Resulting Artifact |"
             echo "|---|---|---|---|---|---|---|---|---|"
-            echo "| [\`$repo\`](https://github.com/$repo) | **$score** / 100 | $crit | $high | $med | $low | $total | $fixed | [\`$art_name\`]($art_url) |"
+            echo "| [\`$repo\`](https://github.com/$repo) | **$score** / 100 | $crit | $high | $med | $low | $total | $fixed | $art_link |"
             echo ""
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Artifact name
-        if: always()
-        id: art
-        env:
-          TARGET_REPOSITORY: ${{ inputs.target_repository }}
-        run: |
-          set -euo pipefail
-          # Artifact names cannot contain '/'.
-          echo "name=$(printf '%s' "$TARGET_REPOSITORY" | tr '/' '-')-security-assessment" >> "$GITHUB_OUTPUT"
-
-      - name: Upload assessment
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.art.outputs.name }}
-          path: |
-            reports/findings.json
-            reports/score.json
-            reports/security-assessment.md
-            reports/cover-letter.md
-            evidence/*.json
-            evidence/NOTES.txt
-          if-no-files-found: error

@@ -16,7 +16,7 @@ import re
 import sys
 
 
-def render_dashboard(reports_dir: pathlib.Path) -> str:
+def render_dashboard(reports_dir: pathlib.Path, artifact_map: dict[str, str] | None = None) -> str:
     lines = [
         "# Multi-Repo Security Assessments Dashboard",
         "",
@@ -45,9 +45,7 @@ def render_dashboard(reports_dir: pathlib.Path) -> str:
         return "\n".join(lines)
 
     # Rollup Table
-    server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
-    server_repo = os.environ.get("GITHUB_REPOSITORY", "bcgov/action-repo-reporter")
-    run_id = os.environ.get("GITHUB_RUN_ID")
+    art_map = artifact_map or {}
 
     lines.append("| Repository | Score | Critical | High | Medium | Low | Total Findings | Fixed | Resulting Artifact |")
     lines.append("|---|---|---|---|---|---|---|---|---|")
@@ -63,8 +61,9 @@ def render_dashboard(reports_dir: pathlib.Path) -> str:
         fixed = len(f.get("fixed") or [])
         repo_link = f"[{repo}](https://github.com/{repo})" if "/" in repo else f"`{repo}`"
         art_name = f"{(repo if '/' in repo else f'bcgov/{repo}').replace('/', '-')}-security-assessment"
-        if run_id:
-            art_link = f"[`{art_name}`]({server_url}/{server_repo}/actions/runs/{run_id}#artifacts)"
+        art_url = art_map.get(art_name) or art_map.get(repo)
+        if art_url:
+            art_link = f"[`{art_name}`]({art_url})"
         else:
             art_link = f"`{art_name}`"
         lines.append(f"| {repo_link} | **{score}** / 100 | {crit} | {high} | {med} | {low} | {total} | {fixed} | {art_link} |")
@@ -156,9 +155,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("reports_dir", nargs="?", default="reports",
                         help="Path to reports directory containing target folders (default: reports)")
+    parser.add_argument("--artifact-map", default=None,
+                        help="Optional JSON file mapping artifact or repository names to download URLs")
     args = parser.parse_args()
     reports_path = pathlib.Path(args.reports_dir)
-    print(render_dashboard(reports_path))
+    art_map = {}
+    if args.artifact_map:
+        p = pathlib.Path(args.artifact_map)
+        if p.is_file():
+            try:
+                art_map = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+    print(render_dashboard(reports_path, art_map))
     return 0
 
 

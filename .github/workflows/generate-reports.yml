@@ -195,10 +195,23 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve Artifact URLs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp
+          server_url="${{ github.server_url }}"
+          server_repo="${{ github.repository }}"
+          run_id="${{ github.run_id }}"
+          gh api "/repos/$server_repo/actions/runs/$run_id/artifacts" --jq '
+            [ .artifacts[] | { (.name): ("'"$server_url/$server_repo/actions/runs/$run_id/artifacts/"'" + (.id | tostring)) } ] | add // {}
+          ' > .tmp/artifacts.json 2>/dev/null || echo "{}" > .tmp/artifacts.json
+
       - name: Render Executive Dashboard to workflow summary
         run: |
           set -euo pipefail
-          python3 scripts/render-dashboard-summary.py reports >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/render-dashboard-summary.py reports --artifact-map .tmp/artifacts.json >> "$GITHUB_STEP_SUMMARY"
 
       - name: Open or Update Reports PR
         id: cpr
