@@ -1413,6 +1413,120 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
         nr_fom_score = score_mod.compute_risk_score({"Critical": 0, "High": 0, "Medium": 3, "Low": 5})
         self.assertTrue(0 <= nr_fom_score <= 15)
 
+    def test_backtick_template_logging_and_test_exclusion(self):
+        spec = importlib.util.spec_from_file_location("sem", ROOT / "scripts/analyze-semantic-domains.py")
+        sem = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sem)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            src = t / "src"
+            src.mkdir()
+
+            # Static prose inside backtick template literals must not trigger DATA-001,
+            # while real interpolated credentials inside template literals still flag.
+            svc = src / "CognitoAuthService.ts"
+            svc.write_text(
+                "console.error(`Token refresh failed: ${response.status} - ${errorText}`);\n"
+                "console.info(`Authorization token: ${accessToken}`);\n"
+            )
+            # Unit tests and spec/fixture files must be skipped by semantic analyzers
+            tests_dir = t / "backend" / "__tests__"
+            tests_dir.mkdir(parents=True)
+            (tests_dir / "health.test.js").write_text("console.error(accessToken);\n")
+            (src / "deploy-template.spec.ts").write_text("console.error(refreshToken);\n")
+
+            findings = sem.analyze_sensitive_logging(t)
+            self.assertEqual(1, len(findings))
+            self.assertEqual("src/CognitoAuthService.ts", findings[0]["evidence"][0]["file"])
+            self.assertEqual(2, findings[0]["evidence"][0]["line"])
+
+    def test_semgrep_test_and_tooling_subprocess_filters(self):
+        spec = importlib.util.spec_from_file_location("compile_findings", ROOT / "scripts/compile-findings.py")
+        cf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cf)
+
+        self.assertTrue(cf.is_test_or_spec_path("backend/__tests__/health.test.js"))
+        self.assertTrue(cf.is_test_or_spec_path("api/src/app/modules/deploy-template.spec.ts"))
+        self.assertTrue(cf.is_test_or_spec_path("fixtures/mock-auth.ts"))
+        self.assertFalse(cf.is_test_or_spec_path("src/api.ts"))
+        self.assertFalse(cf.is_test_or_spec_path("src/logger_test.ts"))
+
+        self.assertTrue(
+            cf.is_tooling_subprocess_finding(
+                "scripts/generate-security-report.js",
+                "javascript.lang.security.detect-child-process.detect-child-process",
+                "Detected calls to child_process",
+            )
+        )
+        self.assertFalse(
+            cf.is_tooling_subprocess_finding(
+                "src/api.js",
+                "javascript.lang.security.detect-child-process.detect-child-process",
+                "Detected calls to child_process",
+            )
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "repo"
+            ev = pathlib.Path(tmp) / "evidence"
+            (root / "backend" / "__tests__").mkdir(parents=True)
+            (root / "scripts").mkdir(parents=True)
+            (root / "src").mkdir(parents=True)
+            ev.mkdir(parents=True)
+
+            (root / "backend" / "__tests__" / "health.test.js").write_text("app.use(cors());\n")
+            (root / "scripts" / "generate-security-report.js").write_text("execSync(cmd);\n")
+            (root / "src" / "api.js").write_text("execSync(userInput);\n")
+
+            semgrep_payload = {
+                "version": "1.0.0",
+                "paths": {"scanned": ["backend/__tests__/health.test.js", "scripts/generate-security-report.js", "src/api.js"]},
+                "results": [
+                    {
+                        "check_id": "javascript.express.security.audit.express-check-csurf-middleware-usage",
+                        "path": "backend/__tests__/health.test.js",
+                        "start": {"line": 1},
+                        "extra": {"severity": "WARNING", "message": "Missing CSRF middleware", "lines": "app.use(cors());"},
+                    },
+                    {
+                        "check_id": "javascript.lang.security.detect-child-process.detect-child-process",
+                        "path": "scripts/generate-security-report.js",
+                        "start": {"line": 1},
+                        "extra": {"severity": "ERROR", "message": "Detected calls to child_process", "lines": "execSync(cmd);"},
+                    },
+                    {
+                        "check_id": "javascript.lang.security.detect-child-process.detect-child-process",
+                        "path": "src/api.js",
+                        "start": {"line": 1},
+                        "extra": {"severity": "ERROR", "message": "Detected calls to child_process", "lines": "execSync(userInput);"},
+                    },
+                ],
+            }
+            (ev / "semgrep.json").write_text(json.dumps(semgrep_payload))
+            (ev / "gitleaks.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "RuleID": "generic-api-key",
+                            "Description": "Generic API Key",
+                            "File": "backend/__tests__/health.test.js",
+                            "StartLine": 1,
+                            "Match": "REDACTED",
+                        }
+                    ]
+                )
+            )
+
+            comp = cf.Compiler("org/repo", root, ev)
+            comp.ingest_semgrep()
+            comp.ingest_gitleaks()
+
+            semgrep_files = [f["evidence"][0]["file"] for f in comp.findings if f["source"] == "semgrep"]
+            gitleaks_files = [f["evidence"][0]["file"] for f in comp.findings if f["source"] == "gitleaks"]
+            self.assertEqual(["src/api.js"], semgrep_files)
+            self.assertEqual(["backend/__tests__/health.test.js"], gitleaks_files)
+
 
 if __name__ == "__main__":
     unittest.main()

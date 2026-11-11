@@ -21,9 +21,17 @@ def _is_ignored(path: pathlib.Path) -> bool:
     ignored_parts = {
         "node_modules", "dist", "build", ".git", ".next", ".nuxt",
         "coverage", "__pycache__", "venv", ".venv", "tests", "test",
-        "spec", "e2e", "migrations", ".pytest_cache",
+        "__tests__", "spec", "specs", "e2e", "fixtures", "mocks",
+        "migrations", ".pytest_cache",
     }
-    return any(p in ignored_parts or p.startswith(".") for p in path.parts)
+    if any(p in ignored_parts or p.startswith(".") for p in path.parts):
+        return True
+    name = path.name.lower()
+    return bool(
+        re.search(r"(?:^|\.)(test|spec)\.[a-z0-9]+$", name)
+        or name.startswith("test_")
+        or name.endswith("_test.go")
+    )
 
 
 def _safe_read_lines(file_path: pathlib.Path, repo_root: pathlib.Path | None = None) -> list[str]:
@@ -504,9 +512,10 @@ def analyze_sensitive_logging(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
 
             # Check for token variables outside static string literals
             if not is_leak:
-                # Strip ordinary non-interpolated string literals
+                # Strip ordinary non-interpolated string literals and template literals
                 stripped = re.sub(r'"(?:[^"\\]|\\.)*"', '""', arg_content)
                 stripped = re.sub(r"'(?:[^'\\]|\\.)*'", "''", stripped)
+                stripped = re.sub(r"`(?:[^`\\]|\\.)*`", "``", stripped)
                 m_var = re.search(
                     r"\b(token|jwt|accessToken|refreshToken|bearer|client_secret)\b(?!\s*[:.\[])",
                     stripped,

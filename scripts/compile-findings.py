@@ -347,6 +347,32 @@ def is_ignorable_plaintext_http(path: str, snippet: str, title: str) -> bool:
     return False
 
 
+_TEST_DIR_PARTS = frozenset({"__tests__", "tests", "test", "spec", "specs", "e2e", "fixtures", "mocks"})
+
+
+def is_test_or_spec_path(path: str) -> bool:
+    """Return True for unit/e2e test suites, specs, fixtures, and mock harnesses."""
+    p = pathlib.PurePosixPath(path.replace("\\", "/"))
+    if any(part.lower() in _TEST_DIR_PARTS for part in p.parts[:-1]):
+        return True
+    name = p.name.lower()
+    return bool(
+        re.search(r"(?:^|\.)(test|spec)\.[a-z0-9]+$", name)
+        or name.startswith("test_")
+        or name.endswith("_test.go")
+    )
+
+
+def is_tooling_subprocess_finding(path: str, check_id: str, title: str) -> bool:
+    """Suppress subprocess/child_process SAST warnings inside developer/CI tooling scripts."""
+    parts = [part.lower() for part in pathlib.PurePosixPath(path.replace("\\", "/")).parts[:-1]]
+    if not any(part in ("scripts", "tools") for part in parts):
+        return False
+    return bool(
+        re.search(r"child[-_ ]?process|subprocess|detect-child-process|exec-?sync|execfile", f"{check_id} {title}", re.I)
+    )
+
+
 class Compiler:
     def __init__(self, repo: str, root: pathlib.Path, evidence: pathlib.Path):
         self.repo = repo
@@ -496,6 +522,10 @@ class Compiler:
             if is_internal_secrets_inherit(self.root, path, line, title):
                 continue
             if is_ignorable_plaintext_http(path, snip, title):
+                continue
+            if is_test_or_spec_path(path):
+                continue
+            if is_tooling_subprocess_finding(path, check_id, title):
                 continue
             severity = normalize_severity(extra.get("severity") or meta.get("impact"))
             domain = self._semgrep_domain(check_id, meta, path)
