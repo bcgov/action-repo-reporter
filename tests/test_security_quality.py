@@ -1424,11 +1424,14 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
             src.mkdir()
 
             # Static prose inside backtick template literals must not trigger DATA-001,
-            # while real interpolated credentials inside template literals still flag.
+            # while real interpolated credentials inside template literals (including
+            # expressions with nested object braces) still flag.
             svc = src / "CognitoAuthService.ts"
             svc.write_text(
                 "console.error(`Token refresh failed: ${response.status} - ${errorText}`);\n"
                 "console.info(`Authorization token: ${accessToken}`);\n"
+                "console.info(`${JSON.stringify({}) + accessToken}`);\n"
+                "console.info(`Status: ${fmt('}', { k: 1 }) || 'ok'} - token label`);\n"
             )
             # Unit tests and spec/fixture files must be skipped by semantic analyzers
             tests_dir = t / "backend" / "__tests__"
@@ -1437,9 +1440,9 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
             (src / "deploy-template.spec.ts").write_text("console.error(refreshToken);\n")
 
             findings = sem.analyze_sensitive_logging(t)
-            self.assertEqual(1, len(findings))
-            self.assertEqual("src/CognitoAuthService.ts", findings[0]["evidence"][0]["file"])
-            self.assertEqual(2, findings[0]["evidence"][0]["line"])
+            self.assertEqual(2, len(findings))
+            self.assertEqual(["src/CognitoAuthService.ts", "src/CognitoAuthService.ts"], [f["evidence"][0]["file"] for f in findings])
+            self.assertEqual([2, 3], [f["evidence"][0]["line"] for f in findings])
 
     def test_semgrep_test_and_tooling_subprocess_filters(self):
         spec = importlib.util.spec_from_file_location("compile_findings", ROOT / "scripts/compile-findings.py")

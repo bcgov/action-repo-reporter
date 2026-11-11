@@ -417,6 +417,69 @@ def analyze_authz_django(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
     return findings
 
 
+def _consume_quoted(text: str, start: int, quote: str) -> int:
+    """Return index just past the matching unescaped quote character."""
+    i = start + 1
+    n = len(text)
+    while i < n:
+        if text[i] == "\\":
+            i += 2
+        elif text[i] == quote:
+            return i + 1
+        else:
+            i += 1
+    return n
+
+
+def _scan_js_segment(text: str, start: int = 0, *, stop_on_brace: bool = False) -> tuple[int, str, list[str]]:
+    """Strip static string/template prose while preserving balanced ${...} expressions."""
+    out: list[str] = []
+    exprs: list[str] = []
+    i = start
+    n = len(text)
+    depth = 1 if stop_on_brace else 0
+
+    while i < n:
+        ch = text[i]
+        if ch in ('"', "'"):
+            i = _consume_quoted(text, i, ch)
+            out.append(ch * 2)
+        elif ch == "`":
+            i += 1
+            out.append(" ")
+            while i < n:
+                tch = text[i]
+                if tch == "\\":
+                    i += 2
+                elif tch == "`":
+                    i += 1
+                    break
+                elif tch == "$" and i + 1 < n and text[i + 1] == "{":
+                    next_i, expr_stripped, sub_exprs = _scan_js_segment(text, i + 2, stop_on_brace=True)
+                    out.append(" " + expr_stripped + " ")
+                    exprs.append(expr_stripped)
+                    exprs.extend(sub_exprs)
+                    i = next_i
+                else:
+                    i += 1
+            out.append(" ")
+        elif stop_on_brace and ch == "{":
+            depth += 1
+            out.append(ch)
+            i += 1
+        elif stop_on_brace and ch == "}":
+            depth -= 1
+            i += 1
+            if depth == 0:
+                break
+            out.append(ch)
+        else:
+            out.append(ch)
+            i += 1
+
+    return i, "".join(out), exprs
+
+
 def analyze_sensitive_logging(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
     """Detect raw HTTP client error object logging and direct token logging."""
     findings = []
@@ -482,24 +545,29 @@ def analyze_sensitive_logging(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
             is_leak = False
             matched_kw = ""
 
-            # Check interpolation in template literals or f-strings
-            m_tmpl = re.search(
-                r'[`"].*?\$\{[^}]*\b(token|jwt|accessToken|refreshToken|bearer|client_secret)\b[^}]*\}.*?[`"]',
-                arg_content,
-                re.I,
-            )
-            if m_tmpl:
-                is_leak = True
-                matched_kw = m_tmpl.group(1)
+            _, stripped, tmpl_exprs = _scan_js_segment(arg_content)
 
-            m_fstr = re.search(
-                r'f[\'"].*?\{[^}]*\b(token|jwt|accessToken|refreshToken|bearer|client_secret)\b[^}]*\}.*?[\'"]',
-                arg_content,
-                re.I,
-            )
-            if m_fstr:
-                is_leak = True
-                matched_kw = m_fstr.group(1)
+            # Check balanced ${...} interpolations in template literals
+            for expr in tmpl_exprs:
+                m_tmpl = re.search(
+                    r"\b(token|jwt|accessToken|refreshToken|bearer|client_secret)\b",
+                    expr,
+                    re.I,
+                )
+                if m_tmpl and not any(fp in expr.lower() for fp in ("token.length", "token.id", "tokencount")):
+                    is_leak = True
+                    matched_kw = m_tmpl.group(1)
+                    break
+
+            if not is_leak:
+                m_fstr = re.search(
+                    r'f[\'"].*?\{[^}]*\b(token|jwt|accessToken|refreshToken|bearer|client_secret)\b[^}]*\}.*?[\'"]',
+                    arg_content,
+                    re.I,
+                )
+                if m_fstr:
+                    is_leak = True
+                    matched_kw = m_fstr.group(1)
 
             # Check for header authorization expression
             if not is_leak and re.search(
@@ -510,12 +578,8 @@ def analyze_sensitive_logging(repo_dir: pathlib.Path) -> list[dict[str, Any]]:
                 is_leak = True
                 matched_kw = "req.headers.authorization"
 
-            # Check for token variables outside static string literals
+            # Check for token variables outside static string and template prose
             if not is_leak:
-                # Strip ordinary non-interpolated string literals and template literals
-                stripped = re.sub(r'"(?:[^"\\]|\\.)*"', '""', arg_content)
-                stripped = re.sub(r"'(?:[^'\\]|\\.)*'", "''", stripped)
-                stripped = re.sub(r"`(?:[^`\\]|\\.)*`", "``", stripped)
                 m_var = re.search(
                     r"\b(token|jwt|accessToken|refreshToken|bearer|client_secret)\b(?!\s*[:.\[])",
                     stripped,
