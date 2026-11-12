@@ -17,7 +17,7 @@ Reports land in this repo under `reports/<repo>/` via a single pull request.
 | Bounded risk score | `reports/<repo>/score.json` (`0–100`, diminishing returns on Medium/Low) |
 | Human report | `reports/<repo>/security-assessment.md` |
 
-**How to read severity:** Critical / High / Medium / Low. Scores use a bounded 0–100 scale (`25*C + min(40, 8*H) + min(15, round(4*ln(1+M))) + min(5, round(0.2*L))`) so a few minor items do not inflate well-maintained repos into 100s — always read the findings table.
+**How to read severity:** Critical / High / Medium / Low. Scores use a bounded 0–100 scale (`min(100, 25*C + min(40, 8*H) + min(15, round(4*ln(1+M))) + min(5, round(0.2*L)))`) so a few minor items do not inflate well-maintained repos into 100s — always read the findings table.
 
 **Why scanners sometimes look empty**
 
@@ -85,6 +85,8 @@ gaps (including when GitHub's own alert list was not read due to token scope). I
 does **not** write a long EY consulting narrative and is **not** a full
 runtime penetration test. Green CI / schema pass is not EY quality.
 
-GitHub-alert chapters report live GitHub alerts when `SECURITY_ALERTS_TOKEN`
-can read them, alongside the public scans (`semgrep`, `gitleaks`, `osv-scanner`,
-`trivy`, and semantic domain analyzers).
+GitHub-alert collection reads `dependabot`, `code-scanning`, and `secret-scanning`
+alert lists when `SECURITY_ALERTS_TOKEN` has access (`compile-findings.py`
+currently ingests `dependabot` and `code-scanning` alerts into findings while
+`secret-scanning` chapter findings rely on `gitleaks`), alongside the public scans
+(`semgrep`, `gitleaks`, `osv-scanner`, `trivy`, and semantic domain analyzers).
