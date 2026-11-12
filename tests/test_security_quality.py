@@ -1530,6 +1530,220 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
             self.assertEqual(["src/api.js"], semgrep_files)
             self.assertEqual(["backend/__tests__/health.test.js"], gitleaks_files)
 
+    def test_trivyignore_and_unfixed_parity(self):
+        spec = importlib.util.spec_from_file_location("compile_findings", ROOT / "scripts/compile-findings.py")
+        cf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cf)
+
+        ev_script = (ROOT / "scripts/security-evidence.sh").read_text()
+        self.assertIn("--ignore-unfixed", ev_script)
+        self.assertIn("--skip-dirs node_modules,coverage,dist,.git", ev_script)
+        self.assertIn("target/.github/.trivyignore", ev_script)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "repo"
+            ev = pathlib.Path(tmp) / "evidence"
+            (root / ".github").mkdir(parents=True)
+            ev.mkdir(parents=True)
+
+            (root / "package-lock.json").write_text('{\n  "node_modules/axios": {},\n  "node_modules/lodash": {}\n}\n')
+            (root / "Dockerfile").write_text("FROM node:24-alpine\n")
+            (root / ".github" / ".trivyignore").write_text(
+                "# Accepted advisory in dev tooling\n"
+                "CVE-2026-1111 # inline comment\n"
+                "AVD-DS-0002\n"
+            )
+
+            (ev / "osv-scanner.json").write_text(
+                json.dumps(
+                    {
+                        "results": [
+                            {
+                                "source": {"path": "package-lock.json"},
+                                "packages": [
+                                    {
+                                        "package": {"name": "axios", "version": "1.0.0"},
+                                        "vulnerabilities": [
+                                            {
+                                                "id": "GHSA-1111-2222-3333",
+                                                "aliases": ["CVE-2026-1111"],
+                                                "summary": "Ignored via .trivyignore",
+                                                "database_specific": {"severity": "HIGH"},
+                                            }
+                                        ],
+                                    },
+                                    {
+                                        "package": {"name": "lodash", "version": "4.17.20"},
+                                        "vulnerabilities": [
+                                            {
+                                                "id": "GHSA-9999-8888-7777",
+                                                "aliases": ["CVE-2026-9999"],
+                                                "summary": "Active prototype pollution",
+                                                "database_specific": {"severity": "HIGH"},
+                                            }
+                                        ],
+                                    },
+                                ],
+                            }
+                        ]
+                    }
+                )
+            )
+            (ev / "trivy.json").write_text(
+                json.dumps(
+                    {
+                        "Trivy": {"Version": "0.76.1"},
+                        "Results": [
+                            {
+                                "Target": "package-lock.json",
+                                "Vulnerabilities": [
+                                    {
+                                        "VulnerabilityID": "CVE-2026-1111",
+                                        "PkgName": "axios",
+                                        "InstalledVersion": "1.0.0",
+                                        "Severity": "HIGH",
+                                    },
+                                    {
+                                        "VulnerabilityID": "CVE-2026-2222",
+                                        "PkgName": "axios",
+                                        "InstalledVersion": "1.0.0",
+                                        "Severity": "MEDIUM",
+                                        "Status": "will_not_fix",
+                                    },
+                                ],
+                            },
+                            {
+                                "Target": "Dockerfile",
+                                "Misconfigurations": [
+                                    {
+                                        "ID": "AVD-DS-0002",
+                                        "Title": "Ignored Dockerfile check",
+                                        "Severity": "LOW",
+                                        "CauseMetadata": {"StartLine": 1},
+                                    }
+                                ],
+                            },
+                        ],
+                    }
+                )
+            )
+
+            comp = cf.Compiler("bcgov/repo", root, ev)
+            comp.ingest_osv()
+            comp.ingest_trivy()
+            self.assertEqual(1, len(comp.findings))
+            self.assertIn("GHSA-9999-8888-7777", comp.findings[0]["title"])
+
+    def test_multi_tool_code_scanning_dast_and_secret_scanning_ingestion(self):
+        spec = importlib.util.spec_from_file_location("compile_findings", ROOT / "scripts/compile-findings.py")
+        cf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cf)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "repo"
+            ev = pathlib.Path(tmp) / "evidence"
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / "src").mkdir(parents=True)
+            (root / "backend" / "__tests__").mkdir(parents=True)
+            ev.mkdir(parents=True)
+
+            (root / ".github" / "workflows" / "scheduled.yml").write_text(
+                "name: Scheduled\n"
+                "jobs:\n"
+                "  zap:\n"
+                "    steps:\n"
+                "      - uses: bcgov/actions/scan-url@deadbeef\n"
+            )
+            (root / "src" / "api.ts").write_text("const a = eval(req.body.x);\nconst k = 'secret1';\nconst k2 = 'secret2';\n")
+            (root / "backend" / "__tests__" / "api.test.ts").write_text("eval('1+1');\n")
+
+            # Local semgrep & gitleaks
+            (ev / "semgrep.json").write_text(
+                json.dumps(
+                    {
+                        "version": "1.179.0",
+                        "paths": {"scanned": ["src/api.ts"]},
+                        "results": [
+                            {
+                                "check_id": "javascript.lang.security.audit.eval-detected",
+                                "path": "src/api.ts",
+                                "start": {"line": 1},
+                                "extra": {"severity": "ERROR", "message": "Detected eval", "lines": "const a = eval(req.body.x);"},
+                            }
+                        ],
+                    }
+                )
+            )
+            (ev / "gitleaks.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "RuleID": "generic-api-key",
+                            "File": "src/api.ts",
+                            "StartLine": 2,
+                            "Match": "REDACTED",
+                        }
+                    ]
+                )
+            )
+            (ev / "code-scanning.json").write_text(
+                json.dumps(
+                    [
+                        # Duplicate of local semgrep finding -> must be deduped
+                        {
+                            "tool": {"name": "Semgrep"},
+                            "rule": {"id": "javascript.lang.security.audit.eval-detected", "security_severity_level": "high", "description": "Detected eval"},
+                            "most_recent_instance": {"location": {"path": "src/api.ts", "start_line": 1}, "message": {"text": "Detected eval"}},
+                        },
+                        # Test file in code-scanning -> must be filtered out
+                        {
+                            "tool": {"name": "CodeQL"},
+                            "rule": {"id": "js/eval-usage", "security_severity_level": "high", "description": "Eval in test"},
+                            "most_recent_instance": {"location": {"path": "backend/__tests__/api.test.ts", "start_line": 1}, "message": {"text": "Eval in test"}},
+                        },
+                        # ZAP DAST URL alert from bcgov/actions/scan-url -> must be retained and anchored to scheduled.yml:5
+                        {
+                            "tool": {"name": "ZAP"},
+                            "rule": {"id": "10038", "severity": "warning", "description": "Content Security Policy (CSP) Header Not Set", "tags": ["CWE-693"]},
+                            "most_recent_instance": {
+                                "location": {"path": "myapp-test.apps.silver.devops.gov.bc.ca/api", "start_line": 1},
+                                "message": {"text": "Content Security Policy (CSP) Header Not Set: GET https://myapp-test.apps.silver.devops.gov.bc.ca/api"},
+                            },
+                        },
+                    ]
+                )
+            )
+            (ev / "secret-scanning.json").write_text(
+                json.dumps(
+                    [
+                        # Same file:line as gitleaks (line 2) -> must be deduped
+                        {
+                            "secret_type": "generic_api_key",
+                            "secret_type_display_name": "Generic API Key",
+                            "first_location_detected": {"path": "src/api.ts", "start_line": 2},
+                        },
+                        # New line (line 3) -> must be ingested
+                        {
+                            "secret_type": "github_pat",
+                            "secret_type_display_name": "GitHub Personal Access Token",
+                            "first_location_detected": {"path": "src/api.ts", "start_line": 3},
+                        },
+                    ]
+                )
+            )
+
+            comp = cf.Compiler("bcgov/myapp", root, ev)
+            comp.ingest_semgrep()
+            comp.ingest_gitleaks()
+            comp.ingest_github_alerts()
+
+            by_source = [(f["source"], f["domain"], f["evidence"][0]["file"], f["evidence"][0]["line"]) for f in comp.findings]
+            self.assertIn(("semgrep", "INJ", "src/api.ts", 1), by_source)
+            self.assertIn(("gitleaks", "SECRETS", "src/api.ts", 2), by_source)
+            self.assertIn(("secret-scanning", "SECRETS", "src/api.ts", 3), by_source)
+            self.assertIn(("zap", "CONFIG", ".github/workflows/scheduled.yml", 5), by_source)
+            self.assertEqual(4, len(comp.findings))
+
 
 if __name__ == "__main__":
     unittest.main()

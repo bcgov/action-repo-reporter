@@ -96,7 +96,13 @@ else
   echo '[]' > "$OUT/gitleaks.json"
 fi
 run osv-scanner sh -c "osv-scanner --format json -r target > '$OUT/osv-scanner.json'"
-run trivy    trivy fs --scanners vuln,misconfig --format json -o "$OUT/trivy.json" target
+trivy_args=(fs --scanners vuln,misconfig --ignore-unfixed --skip-dirs node_modules,coverage,dist,.git --format json -o "$OUT/trivy.json")
+if [ -f "target/.github/.trivyignore" ]; then
+  trivy_args+=(--ignorefile "target/.github/.trivyignore")
+elif [ -f "target/.trivyignore" ]; then
+  trivy_args+=(--ignorefile "target/.trivyignore")
+fi
+run trivy    trivy "${trivy_args[@]}" target
 
 # Summarize sizes so CI logs show whether scanners produced real evidence.
 note "Evidence in $OUT/:"
