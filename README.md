@@ -14,12 +14,10 @@ Reports land in this repo under `reports/<repo>/` via a single pull request.
 | Output | Path |
 |---|---|
 | Findings (JSON) | `reports/<repo>/findings.json` |
-| EY-style score | `reports/<repo>/score.json` (`min(100, 10C+5H+2M+1L)`) |
+| Bounded risk score | `reports/<repo>/score.json` (`0–100`, diminishing returns on Medium/Low) |
 | Human report | `reports/<repo>/security-assessment.md` |
 
-**How to read severity:** Critical / High / Medium / Low. The score is a weighted
-count capped at 100 (same formula EY used). A high score means many findings, not
-necessarily that the worst item is Critical — always read the findings table.
+**How to read severity:** Critical / High / Medium / Low. Scores use a bounded 0–100 scale (`min(100, 25*C + min(40, 8*H) + min(15, round(4*ln(1+M))) + min(5, round(0.2*L)))`) so a few minor items do not inflate well-maintained repos into 100s — always read the findings table.
 
 **Why scanners sometimes look empty**
 
@@ -83,10 +81,12 @@ After the first successful publish PR merges, browse:
 
 This pipeline produces consistent, citable findings with per-finding impact and
 recommendation, chapter write-ups even when a scan is clean, and honest coverage
-gaps (including when GitHub's own alert list was not read). It does **not** write a
-long EY consulting narrative, is **not** a full route-guard RBAC audit, and does
-**not** claim GitHub alert lists were read until issue #96. Green CI / schema pass
-is not EY quality.
+gaps (including when GitHub's own alert list was not read due to token scope). It
+does **not** write a long EY consulting narrative and is **not** a full
+runtime penetration test. Green CI / schema pass is not EY quality.
 
-Until #96, GitHub-alert chapters report the public scans already run:
-code-scanning → Semgrep; secret-scanning → gitleaks; Dependabot → osv-scanner + Trivy.
+GitHub-alert collection reads `dependabot`, `code-scanning`, and `secret-scanning`
+alert lists when `SECURITY_ALERTS_TOKEN` has access (`compile-findings.py`
+currently ingests `dependabot` and `code-scanning` alerts into findings while
+`secret-scanning` chapter findings rely on `gitleaks`), alongside the public scans
+(`semgrep`, `gitleaks`, `osv-scanner`, `trivy`, and semantic domain analyzers).
