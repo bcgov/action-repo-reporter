@@ -65,6 +65,23 @@ if ! jq -e '[ .[] | del(.secret) | .secret = "REDACTED" ]' "$OUT/secret-scanning
   echo "ERROR: secret-scanning redaction failed; aborting" >&2; exit 1
 fi
 rm -f "$OUT/secret-scanning-raw.json"; mv "$OUT/secret-scanning.json.tmp" "$OUT/secret-scanning.json"
+# Resolve commit file/line locations for open secret-scanning alerts without retaining secret bytes.
+if [ -s "$OUT/secret-scanning.json" ] && [ "$(jq 'length' "$OUT/secret-scanning.json" 2>/dev/null || echo 0)" -gt 0 ]; then
+  enriched="$OUT/secret-scanning.enriched.tmp"
+  echo '[]' > "$enriched"
+  while IFS= read -r alert_json; do
+    loc_url="$(printf '%s' "$alert_json" | jq -r '.locations_url // empty')"
+    has_path="$(printf '%s' "$alert_json" | jq -r '.first_location_detected.details.path // .first_location_detected.path // empty')"
+    if [ -n "$loc_url" ] && [ -z "$has_path" ]; then
+      locs="$(gh api "$loc_url" 2>/dev/null | jq -c '[ .[] | select(.details.path?) | {path: .details.path, start_line: (.details.start_line // 1)} ]' 2>/dev/null || echo '[]')"
+    else
+      locs='[]'
+    fi
+    alert_json="$(printf '%s' "$alert_json" | jq -c --argjson locs "$locs" '. + {resolved_locations: $locs} | del(.secret) | .secret = "REDACTED"')"
+    jq -c --argjson item "$alert_json" '. + [$item]' "$enriched" > "$OUT/secret-scanning.step.tmp" && mv "$OUT/secret-scanning.step.tmp" "$enriched"
+  done < <(jq -c '.[]' "$OUT/secret-scanning.json")
+  mv "$enriched" "$OUT/secret-scanning.json"
+fi
 
 # Always leave a JSON file for each scanner so the agent can tell "missing" from "empty".
 ensure() { [ -s "$1" ] || echo "$2" > "$1"; }

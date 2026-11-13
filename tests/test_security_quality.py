@@ -1550,9 +1550,12 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
             (root / "Dockerfile").write_text("FROM node:24-alpine\n")
             (root / ".github" / ".trivyignore").write_text(
                 "# Accepted advisory in dev tooling\n"
-                "CVE-2026-1111 # inline comment\n"
+                "CVE-2026-1111 exp:2099-12-31 # active exception\n"
+                "CVE-2026-3333 exp:2020-01-01 # expired exception must resurface\n"
                 "AVD-DS-0002\n"
             )
+            # When .github/.trivyignore exists, root .trivyignore must NOT be merged.
+            (root / ".trivyignore").write_text("CVE-2026-9999\n")
 
             (ev / "osv-scanner.json").write_text(
                 json.dumps(
@@ -1567,7 +1570,7 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
                                             {
                                                 "id": "GHSA-1111-2222-3333",
                                                 "aliases": ["CVE-2026-1111"],
-                                                "summary": "Ignored via .trivyignore",
+                                                "summary": "Ignored via active .trivyignore",
                                                 "database_specific": {"severity": "HIGH"},
                                             }
                                         ],
@@ -1604,6 +1607,18 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
                                         "Severity": "HIGH",
                                     },
                                     {
+                                        "VulnerabilityID": "CVE-2026-3333",
+                                        "PkgName": "axios",
+                                        "InstalledVersion": "1.0.0",
+                                        "Severity": "HIGH",
+                                    },
+                                    {
+                                        "VulnerabilityID": "CVE-2026-3333",
+                                        "PkgName": "axios",
+                                        "InstalledVersion": "2.0.0",
+                                        "Severity": "HIGH",
+                                    },
+                                    {
                                         "VulnerabilityID": "CVE-2026-2222",
                                         "PkgName": "axios",
                                         "InstalledVersion": "1.0.0",
@@ -1631,8 +1646,16 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
             comp = cf.Compiler("bcgov/repo", root, ev)
             comp.ingest_osv()
             comp.ingest_trivy()
-            self.assertEqual(1, len(comp.findings))
-            self.assertIn("GHSA-9999-8888-7777", comp.findings[0]["title"])
+            titles = [f["title"] for f in comp.findings]
+            # lodash GHSA-9999 (not ignored because .github/.trivyignore took precedence) + expired CVE-2026-3333 (both 1.0.0 and 2.0.0 retained)
+            self.assertEqual(3, len(comp.findings), titles)
+            self.assertTrue(any("GHSA-9999-8888-7777" in t for t in titles))
+            self.assertTrue(any("axios 1.0.0: CVE-2026-3333" in t for t in titles))
+            self.assertTrue(any("axios 2.0.0: CVE-2026-3333" in t for t in titles))
+
+            # Empty .github/.trivyignore also stops fallback to root .trivyignore
+            (root / ".github" / ".trivyignore").write_text("")
+            self.assertEqual(set(), cf.load_trivyignore(root))
 
     def test_multi_tool_code_scanning_dast_and_secret_scanning_ingestion(self):
         spec = importlib.util.spec_from_file_location("compile_findings", ROOT / "scripts/compile-findings.py")
@@ -1654,10 +1677,11 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
                 "    steps:\n"
                 "      - uses: bcgov/actions/scan-url@deadbeef\n"
             )
-            (root / "src" / "api.ts").write_text("const a = eval(req.body.x);\nconst k = 'secret1';\nconst k2 = 'secret2';\n")
+            (root / "src" / "api.ts").write_text("const a = eval(req.body.x);\nconst k = 'secret1';\nconst k2 = 'secret2';\nconst k3 = 'secret3';\n")
             (root / "backend" / "__tests__" / "api.test.ts").write_text("eval('1+1');\n")
+            (root / "package-lock.json").write_text('{\n  "node_modules/lodash": {}\n}\n')
 
-            # Local semgrep & gitleaks
+            # Local semgrep, trivy, & gitleaks
             (ev / "semgrep.json").write_text(
                 json.dumps(
                     {
@@ -1669,6 +1693,26 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
                                 "path": "src/api.ts",
                                 "start": {"line": 1},
                                 "extra": {"severity": "ERROR", "message": "Detected eval", "lines": "const a = eval(req.body.x);"},
+                            }
+                        ],
+                    }
+                )
+            )
+            (ev / "trivy.json").write_text(
+                json.dumps(
+                    {
+                        "Trivy": {"Version": "0.76.1"},
+                        "Results": [
+                            {
+                                "Target": "package-lock.json",
+                                "Vulnerabilities": [
+                                    {
+                                        "VulnerabilityID": "CVE-2026-5555",
+                                        "PkgName": "lodash",
+                                        "InstalledVersion": "4.17.20",
+                                        "Severity": "HIGH",
+                                    }
+                                ],
                             }
                         ],
                     }
@@ -1695,6 +1739,18 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
                             "rule": {"id": "javascript.lang.security.audit.eval-detected", "security_severity_level": "high", "description": "Detected eval"},
                             "most_recent_instance": {"location": {"path": "src/api.ts", "start_line": 1}, "message": {"text": "Detected eval"}},
                         },
+                        # Duplicate of local Trivy CVE -> must be deduped
+                        {
+                            "tool": {"name": "Trivy"},
+                            "rule": {"id": "CVE-2026-5555", "security_severity_level": "high", "description": "lodash vuln", "tags": ["vulnerability"]},
+                            "most_recent_instance": {"location": {"path": "package-lock.json", "start_line": 2}, "message": {"text": "Package: lodash"}},
+                        },
+                        # New Trivy CVE from code-scanning only -> must get domain DEPS
+                        {
+                            "tool": {"name": "Trivy"},
+                            "rule": {"id": "CVE-2026-6666", "security_severity_level": "medium", "description": "lodash other vuln", "tags": ["vulnerability"]},
+                            "most_recent_instance": {"location": {"path": "package-lock.json", "start_line": 2}, "message": {"text": "Package: lodash"}},
+                        },
                         # Test file in code-scanning -> must be filtered out
                         {
                             "tool": {"name": "CodeQL"},
@@ -1720,13 +1776,20 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
                         {
                             "secret_type": "generic_api_key",
                             "secret_type_display_name": "Generic API Key",
-                            "first_location_detected": {"path": "src/api.ts", "start_line": 2},
+                            "first_location_detected": {"type": "commit", "details": {"path": "src/api.ts", "start_line": 2}},
                         },
-                        # New line (line 3) -> must be ingested
+                        # API-shaped details nested location -> must be ingested
                         {
                             "secret_type": "github_pat",
                             "secret_type_display_name": "GitHub Personal Access Token",
-                            "first_location_detected": {"path": "src/api.ts", "start_line": 3},
+                            "first_location_detected": {"type": "commit", "details": {"path": "src/api.ts", "start_line": 3}},
+                        },
+                        # Enriched resolved_locations (from locations_url) -> must be ingested
+                        {
+                            "secret_type": "aws_access_key_id",
+                            "secret_type_display_name": "AWS Access Key ID",
+                            "locations_url": "https://api.github.com/repos/bcgov/myapp/secret-scanning/alerts/9/locations",
+                            "resolved_locations": [{"path": "src/api.ts", "start_line": 4}],
                         },
                     ]
                 )
@@ -1734,15 +1797,19 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
 
             comp = cf.Compiler("bcgov/myapp", root, ev)
             comp.ingest_semgrep()
+            comp.ingest_trivy()
             comp.ingest_gitleaks()
             comp.ingest_github_alerts()
 
             by_source = [(f["source"], f["domain"], f["evidence"][0]["file"], f["evidence"][0]["line"]) for f in comp.findings]
             self.assertIn(("semgrep", "INJ", "src/api.ts", 1), by_source)
+            self.assertIn(("trivy", "DEPS", "package-lock.json", 2), by_source)
             self.assertIn(("gitleaks", "SECRETS", "src/api.ts", 2), by_source)
             self.assertIn(("secret-scanning", "SECRETS", "src/api.ts", 3), by_source)
+            self.assertIn(("secret-scanning", "SECRETS", "src/api.ts", 4), by_source)
             self.assertIn(("zap", "CONFIG", ".github/workflows/scheduled.yml", 5), by_source)
-            self.assertEqual(4, len(comp.findings))
+            # 1 semgrep + 2 trivy CVEs (CVE-2026-5555 local, CVE-2026-6666 code-scanning) + 1 gitleaks + 2 secret-scanning + 1 zap = 7
+            self.assertEqual(7, len(comp.findings), by_source)
 
 
 if __name__ == "__main__":

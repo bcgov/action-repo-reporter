@@ -10,6 +10,7 @@ the public scans we already run.
 from __future__ import annotations
 
 import argparse
+import datetime
 import importlib.util
 import json
 import pathlib
@@ -374,19 +375,34 @@ def is_tooling_subprocess_finding(path: str, check_id: str, title: str) -> bool:
 
 
 def load_trivyignore(root: pathlib.Path) -> set[str]:
-    """Load ignored CVE/GHSA/AVD IDs from .github/.trivyignore or .trivyignore if present."""
+    """Load non-expired CVE/GHSA/AVD IDs from .github/.trivyignore, else .trivyignore."""
     ignored: set[str] = set()
+    today = datetime.date.today()
     for rel in (".github/.trivyignore", ".trivyignore"):
-        text = safe_text(root, rel)
-        if not text:
+        if not inside(root, rel):
             continue
+        text = safe_text(root, rel) or ""
         for raw_line in text.splitlines():
             line = raw_line.split("#", 1)[0].strip()
             if not line:
                 continue
-            token = line.split()[0].upper()
-            if token:
+            parts = line.split()
+            token = parts[0].upper()
+            if not token:
+                continue
+            expired = False
+            for part in parts[1:]:
+                if part.lower().startswith("exp:"):
+                    try:
+                        exp_date = datetime.date.fromisoformat(part.split(":", 1)[1])
+                        if exp_date < today:
+                            expired = True
+                    except ValueError:
+                        pass
+            if not expired:
                 ignored.add(token)
+        # Match Trivy's single-ignorefile precedence (.github/.trivyignore beats .trivyignore even if empty).
+        break
     return ignored
 
 
@@ -690,11 +706,14 @@ class Compiler:
                 dedupe_key=f"dep|{lock}|{name}|{version}|{vid}",
                 package=name,
             )
-            self._dedupe.add(f"dep_pkg_adv|{name}|{vid.upper()}")
-            # Record aliases (e.g. CVE ids) so Trivy and Dependabot do not re-add the same advisory.
+            lock_dir = str(pathlib.PurePosixPath(lock).parent)
+            self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{name}|{vid.upper()}")
+            self._dedupe.add(f"dep_dir_adv|{lock_dir}|{vid.upper()}")
+            # Record aliases (e.g. CVE ids) so Trivy, Dependabot, and Trivy code-scanning do not re-add the same advisory.
             for alias in aliases:
                 self._dedupe.add(f"dep|{lock}|{name}|{version}|{alias}")
-                self._dedupe.add(f"dep_pkg_adv|{name}|{str(alias).upper()}")
+                self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{name}|{str(alias).upper()}")
+                self._dedupe.add(f"dep_dir_adv|{lock_dir}|{str(alias).upper()}")
 
 
     def ingest_trivy(self):
@@ -734,11 +753,13 @@ class Compiler:
                 if not ev:
                     continue
                 alt = f"dep|{lock}|{pkg}|{ver}|{vid}"
-                if alt in self._dedupe or f"dep_pkg_adv|{pkg}|{vid.upper()}" in self._dedupe:
+                if alt in self._dedupe:
                     continue
                 fixed = v.get("FixedVersion")
                 rec = f"Upgrade {pkg} to {fixed}." if fixed else f"Upgrade {pkg} to a patched release per {vid}."
-                self._dedupe.add(f"dep_pkg_adv|{pkg}|{vid.upper()}")
+                lock_dir = str(pathlib.PurePosixPath(lock).parent)
+                self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{vid.upper()}")
+                self._dedupe.add(f"dep_dir_adv|{lock_dir}|{vid.upper()}")
                 self._add_finding(
                     domain="dependencies", severity=sev,
                     title=f"{pkg} {ver}: {title}",
@@ -849,19 +870,24 @@ class Compiler:
             cve_id = str(adv.get("cve_id") or "")
             if ghsa.upper() in self.trivyignore or (cve_id and cve_id.upper() in self.trivyignore):
                 return
-            if (f"dep_pkg_adv|{pkg}|{ghsa.upper()}" in self._dedupe
-                    or (cve_id and f"dep_pkg_adv|{pkg}|{cve_id.upper()}" in self._dedupe)):
-                return
             sev = normalize_severity(adv.get("severity"))
             summary = str(adv.get("summary") or ghsa)[:160]
-            lock = self._find_lockfile()
-            line = self._line_for_package(lock, pkg) if lock else 1
-            ev = cite(self.root, lock, line, pkg) if lock else None
+            lock = rel_path(str(dep.get("manifest_path") or ""), self.root) or self._find_lockfile()
+            if not lock:
+                return
+            lock_dir = str(pathlib.PurePosixPath(lock).parent)
+            if (f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{ghsa.upper()}" in self._dedupe
+                    or (cve_id and f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{cve_id.upper()}" in self._dedupe)):
+                return
+            line = self._line_for_package(lock, pkg)
+            ev = cite(self.root, lock, line, pkg)
             if not ev:
                 return
-            self._dedupe.add(f"dep_pkg_adv|{pkg}|{ghsa.upper()}")
+            self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{ghsa.upper()}")
+            self._dedupe.add(f"dep_dir_adv|{lock_dir}|{ghsa.upper()}")
             if cve_id:
-                self._dedupe.add(f"dep_pkg_adv|{pkg}|{cve_id.upper()}")
+                self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{cve_id.upper()}")
+                self._dedupe.add(f"dep_dir_adv|{lock_dir}|{cve_id.upper()}")
             self._add_finding(
                 domain="dependencies", severity=sev, title=f"{pkg}: {summary}",
                 evidence=[ev], impact=str(adv.get("description") or summary)[:400],
@@ -871,17 +897,29 @@ class Compiler:
                 package=pkg,
             )
         elif kind == "secret-scanning":
-            loc = (
-                alert.get("first_location_detected")
-                or alert.get("location")
-                or (alert.get("most_recent_instance") or {}).get("location")
-                or {}
-            )
-            if not isinstance(loc, dict):
-                return
-            path = rel_path(str(loc.get("path") or ""), self.root)
-            line = loc.get("start_line") or loc.get("line") or 1
-            if not path or not isinstance(line, int):
+            candidates: list[dict] = []
+            for item in (alert.get("resolved_locations") or []):
+                if isinstance(item, dict):
+                    candidates.append(item)
+            first_loc = alert.get("first_location_detected")
+            if isinstance(first_loc, dict):
+                if isinstance(first_loc.get("details"), dict):
+                    candidates.append(first_loc["details"])
+                candidates.append(first_loc)
+            if isinstance(alert.get("location"), dict):
+                candidates.append(alert["location"])
+            mri_loc = (alert.get("most_recent_instance") or {}).get("location")
+            if isinstance(mri_loc, dict):
+                candidates.append(mri_loc)
+
+            path, line = None, 1
+            for cand in candidates:
+                p = rel_path(str(cand.get("path") or ""), self.root)
+                ln = cand.get("start_line") or cand.get("line") or 1
+                if p and isinstance(ln, int):
+                    path, line = p, ln
+                    break
+            if not path:
                 return
             if f"secret_loc|{path}|{line}" in self._dedupe:
                 return
@@ -953,11 +991,28 @@ class Compiler:
                 dedupe_loc = f"{path}|{line}"
                 domain_path = path
 
-            meta = {"technology": rule.get("tags") or []}
-            domain = self._semgrep_domain(f"{rule_id} {title} {text}", meta, domain_path)
-            if source in ("zap", "nuclei") and domain == "injection":
-                if not any(k in f"{rule_id} {title} {text}".lower() for k in ("sql", "xss", "inject", "eval", "exec", "command", "ssti", "xxe", "ssrf")):
-                    domain = "configuration"
+            tags = [str(t).lower() for t in (rule.get("tags") or [])]
+            is_trivy_vuln = source == "trivy" and (
+                bool(re.match(r"^(?:CVE-|GHSA-)", rule_id, re.I)) or "vulnerability" in tags
+            )
+            if is_trivy_vuln:
+                lock_dir = str(pathlib.PurePosixPath(domain_path or ".").parent)
+                m_pkg = re.search(r"Package:\s*([^\s,\n]+)", text + "\n" + help_text)
+                pkg = m_pkg.group(1) if m_pkg else None
+                if pkg and f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{rule_id.upper()}" in self._dedupe:
+                    return
+                if not pkg and f"dep_dir_adv|{lock_dir}|{rule_id.upper()}" in self._dedupe:
+                    return
+                self._dedupe.add(f"dep_dir_adv|{lock_dir}|{rule_id.upper()}")
+                if pkg:
+                    self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{rule_id.upper()}")
+                domain = "dependencies"
+            else:
+                meta = {"technology": rule.get("tags") or []}
+                domain = self._semgrep_domain(f"{rule_id} {title} {text}", meta, domain_path)
+                if source in ("zap", "nuclei") and domain == "injection":
+                    if not any(k in f"{rule_id} {title} {text}".lower() for k in ("sql", "xss", "inject", "eval", "exec", "command", "ssti", "xxe", "ssrf")):
+                        domain = "configuration"
             sev_raw = rule.get("security_severity_level") or rule.get("severity") or most.get("level")
             self._add_finding(
                 domain=domain,
@@ -967,6 +1022,7 @@ class Compiler:
                 recommendation=str(rule.get("help") or "Follow code-scanning remediation guidance.")[:400],
                 source=source, cwes=extract_cwes(rule.get("tags")),
                 dedupe_key=f"{source}|{rule_id}|{dedupe_loc}",
+                package=pkg if is_trivy_vuln else None,
             )
 
 
