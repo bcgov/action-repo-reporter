@@ -10,6 +10,7 @@ the public scans we already run.
 from __future__ import annotations
 
 import argparse
+import datetime
 import importlib.util
 import json
 import pathlib
@@ -373,6 +374,38 @@ def is_tooling_subprocess_finding(path: str, check_id: str, title: str) -> bool:
     )
 
 
+def load_trivyignore(root: pathlib.Path) -> set[str]:
+    """Load non-expired CVE/GHSA/AVD IDs from .github/.trivyignore, else .trivyignore."""
+    ignored: set[str] = set()
+    today = datetime.date.today()
+    for rel in (".github/.trivyignore", ".trivyignore"):
+        if not inside(root, rel):
+            continue
+        text = safe_text(root, rel) or ""
+        for raw_line in text.splitlines():
+            line = raw_line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            parts = line.split()
+            token = parts[0].upper()
+            if not token:
+                continue
+            expired = False
+            for part in parts[1:]:
+                if part.lower().startswith("exp:"):
+                    try:
+                        exp_date = datetime.date.fromisoformat(part.split(":", 1)[1])
+                        if exp_date < today:
+                            expired = True
+                    except ValueError:
+                        pass
+            if not expired:
+                ignored.add(token)
+        # Match Trivy's single-ignorefile precedence (.github/.trivyignore beats .trivyignore even if empty).
+        break
+    return ignored
+
+
 class Compiler:
     def __init__(self, repo: str, root: pathlib.Path, evidence: pathlib.Path):
         self.repo = repo
@@ -386,6 +419,7 @@ class Compiler:
         self.tool_meta: dict[str, dict] = {}
         self.domain_counters: dict[str, int] = defaultdict(int)
         self._dedupe: set[str] = set()
+        self.trivyignore: set[str] = load_trivyignore(root)
         self.notes = (evidence / "NOTES.txt").read_text(errors="replace") if (evidence / "NOTES.txt").is_file() else ""
         self.source_ok: dict[str, bool | None] = {
             "semgrep": None, "gitleaks": None, "osv-scanner": None, "trivy": None,
@@ -609,6 +643,7 @@ class Compiler:
                 continue
             ev["snippet"] = "[redacted match]"
             rule = str(hit.get("RuleID") or hit.get("Description") or "gitleaks")
+            self._dedupe.add(f"secret_loc|{path}|{line}")
             self._add_finding(
                 domain="secrets", severity="High",
                 title=f"Potential secret detected ({rule})",
@@ -647,6 +682,8 @@ class Compiler:
         for source, name, version, v in vulns:
             vid = str(v.get("id") or "OSV")
             aliases = v.get("aliases") or []
+            if vid.upper() in self.trivyignore or any(str(a).upper() in self.trivyignore for a in aliases):
+                continue
             summary = str(v.get("summary") or v.get("details") or vid).split("\n")[0][:160]
             sev = normalize_severity((v.get("database_specific") or {}).get("severity"))
             cwes = extract_cwes((v.get("database_specific") or {}).get("cwe_ids") or v.get("cwe_ids"))
@@ -669,9 +706,14 @@ class Compiler:
                 dedupe_key=f"dep|{lock}|{name}|{version}|{vid}",
                 package=name,
             )
-            # Record aliases (e.g. CVE ids) so Trivy does not re-add the same advisory.
+            lock_dir = str(pathlib.PurePosixPath(lock).parent)
+            self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{name}|{vid.upper()}")
+            self._dedupe.add(f"dep_dir_adv|{lock_dir}|{vid.upper()}")
+            # Record aliases (e.g. CVE ids) so Trivy, Dependabot, and Trivy code-scanning do not re-add the same advisory.
             for alias in aliases:
                 self._dedupe.add(f"dep|{lock}|{name}|{version}|{alias}")
+                self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{name}|{str(alias).upper()}")
+                self._dedupe.add(f"dep_dir_adv|{lock_dir}|{str(alias).upper()}")
 
 
     def ingest_trivy(self):
@@ -697,6 +739,10 @@ class Compiler:
                 pkg = str(v.get("PkgName") or "package")
                 ver = str(v.get("InstalledVersion") or "?")
                 vid = str(v.get("VulnerabilityID") or "CVE")
+                if vid.upper() in self.trivyignore:
+                    continue
+                if str(v.get("Status") or "").lower() in ("will_not_fix", "end_of_life"):
+                    continue
                 title = str(v.get("Title") or vid)[:160]
                 sev = normalize_severity(v.get("Severity"))
                 desc = str(v.get("Description") or title)[:300]
@@ -709,14 +755,11 @@ class Compiler:
                 alt = f"dep|{lock}|{pkg}|{ver}|{vid}"
                 if alt in self._dedupe:
                     continue
-                # Also dedupe when OSV used GHSA and Trivy used CVE for same pkg title overlap
-                skip = False
-                for existing in list(self._dedupe):
-                    if existing.startswith(f"osv|{pkg}|") or existing.startswith(f"trivy|{pkg}|"):
-                        # keep both if different advisory ids; only skip exact vid match (handled above)
-                        pass
                 fixed = v.get("FixedVersion")
                 rec = f"Upgrade {pkg} to {fixed}." if fixed else f"Upgrade {pkg} to a patched release per {vid}."
+                lock_dir = str(pathlib.PurePosixPath(lock).parent)
+                self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{vid.upper()}")
+                self._dedupe.add(f"dep_dir_adv|{lock_dir}|{vid.upper()}")
                 self._add_finding(
                     domain="dependencies", severity=sev,
                     title=f"{pkg} {ver}: {title}",
@@ -737,6 +780,8 @@ class Compiler:
                 if not ev:
                     continue
                 mid = str(m.get("ID") or m.get("AVDID") or "trivy-misconfig")
+                if mid.upper() in self.trivyignore:
+                    continue
                 m_title = str(m.get("Title") or mid)[:160]
                 m_snip = ev.get("snippet") or ""
                 if is_allowlisted_action_tag(m_snip, m_title):
@@ -757,6 +802,40 @@ class Compiler:
                 )
         self._mark_source("trivy", True, version=str(version), count=vuln_n + mis_n,
                           detail=f"{vuln_n} vuln(s), {mis_n} misconfig(s)")
+
+    def _cite_dast_target(self, raw_target: str, text: str, source: str) -> dict | None:
+        """Anchor a URL-based DAST alert (ZAP/Nuclei) to the repo's scan workflow or manifest."""
+        wf_dir = self.root / ".github" / "workflows"
+        wf_files = (sorted(wf_dir.glob("*.yml")) + sorted(wf_dir.glob("*.yaml"))) if wf_dir.is_dir() else []
+        chosen_rel: str | None = None
+        chosen_line = 1
+        for wf in wf_files:
+            rel = str(wf.relative_to(self.root))
+            wf_text = safe_text(self.root, rel) or ""
+            for idx, ln in enumerate(wf_text.splitlines(), 1):
+                if re.search(r"scan-url|zaproxy|nuclei", ln, re.I):
+                    chosen_rel, chosen_line = rel, idx
+                    break
+            if chosen_rel:
+                break
+        if not chosen_rel and wf_files:
+            chosen_rel = str(wf_files[0].relative_to(self.root))
+        if not chosen_rel:
+            for candidate in ("README.md", "package.json", "bcgovpubcode.yml", "docker-compose.yml"):
+                if (self.root / candidate).is_file():
+                    chosen_rel = candidate
+                    break
+        if not chosen_rel:
+            for p in sorted(self.root.rglob("*")):
+                if p.is_file() and ".git" not in p.parts:
+                    chosen_rel = str(p.relative_to(self.root))
+                    break
+        if not chosen_rel:
+            return None
+        ev = cite(self.root, chosen_rel, chosen_line, "")
+        if ev:
+            ev["snippet"] = f"[{source.upper()}] {raw_target}: {text}".strip(": ")[:240]
+        return ev
 
     def ingest_github_alerts(self):
         for name in ("dependabot", "code-scanning", "secret-scanning"):
@@ -787,14 +866,28 @@ class Compiler:
             dep = alert.get("dependency") or {}
             pkg = (dep.get("package") or {}).get("name") or "dependency"
             adv = alert.get("security_advisory") or {}
-            ghsa = adv.get("ghsa_id") or "GHSA"
+            ghsa = str(adv.get("ghsa_id") or "GHSA")
+            cve_id = str(adv.get("cve_id") or "")
+            if ghsa.upper() in self.trivyignore or (cve_id and cve_id.upper() in self.trivyignore):
+                return
             sev = normalize_severity(adv.get("severity"))
             summary = str(adv.get("summary") or ghsa)[:160]
-            lock = self._find_lockfile()
-            line = self._line_for_package(lock, pkg) if lock else 1
-            ev = cite(self.root, lock, line, pkg) if lock else None
+            lock = rel_path(str(dep.get("manifest_path") or ""), self.root) or self._find_lockfile()
+            if not lock:
+                return
+            lock_dir = str(pathlib.PurePosixPath(lock).parent)
+            if (f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{ghsa.upper()}" in self._dedupe
+                    or (cve_id and f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{cve_id.upper()}" in self._dedupe)):
+                return
+            line = self._line_for_package(lock, pkg)
+            ev = cite(self.root, lock, line, pkg)
             if not ev:
                 return
+            self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{ghsa.upper()}")
+            self._dedupe.add(f"dep_dir_adv|{lock_dir}|{ghsa.upper()}")
+            if cve_id:
+                self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{cve_id.upper()}")
+                self._dedupe.add(f"dep_dir_adv|{lock_dir}|{cve_id.upper()}")
             self._add_finding(
                 domain="dependencies", severity=sev, title=f"{pkg}: {summary}",
                 evidence=[ev], impact=str(adv.get("description") or summary)[:400],
@@ -803,36 +896,133 @@ class Compiler:
                 dedupe_key=f"dep|{lock}|{pkg}|{(dep.get('manifest_path') or '')}|{ghsa}",
                 package=pkg,
             )
-        elif kind == "code-scanning":
-            rule = alert.get("rule") or {}
-            most = alert.get("most_recent_instance") or {}
-            loc = most.get("location") or {}
-            path = rel_path(str(loc.get("path") or ""), self.root)
-            line = loc.get("start_line") or 1
+        elif kind == "secret-scanning":
+            candidates: list[dict] = []
+            for item in (alert.get("resolved_locations") or []):
+                if isinstance(item, dict):
+                    candidates.append(item)
+            first_loc = alert.get("first_location_detected")
+            if isinstance(first_loc, dict):
+                if isinstance(first_loc.get("details"), dict):
+                    candidates.append(first_loc["details"])
+                candidates.append(first_loc)
+            if isinstance(alert.get("location"), dict):
+                candidates.append(alert["location"])
+            mri_loc = (alert.get("most_recent_instance") or {}).get("location")
+            if isinstance(mri_loc, dict):
+                candidates.append(mri_loc)
+
+            path, line = None, 1
+            for cand in candidates:
+                p = rel_path(str(cand.get("path") or ""), self.root)
+                ln = cand.get("start_line") or cand.get("line") or 1
+                if p and isinstance(ln, int):
+                    path, line = p, ln
+                    break
             if not path:
                 return
-            msg = most.get("message", {})
-            text = msg.get("text") if isinstance(msg, dict) else ""
-            ev = cite(self.root, path, int(line), text or "")
+            if f"secret_loc|{path}|{line}" in self._dedupe:
+                return
+            ev = cite(self.root, path, line, "")
             if not ev:
                 return
-            help_text = str(rule.get("help") or rule.get("description") or rule.get("name") or "Code scanning alert")
-            title = str(rule.get("name") or rule.get("id") or "code-scanning")[:160]
-            snip = ev.get("snippet") or text or ""
-            if is_allowlisted_action_tag(snip, title):
-                return
-            if is_internal_secrets_inherit(self.root, path, int(line), title):
-                return
-            if is_ignorable_plaintext_http(path, snip, title):
-                return
+            ev["snippet"] = "[redacted match]"
+            secret_type = str(alert.get("secret_type_display_name") or alert.get("secret_type") or "secret-scanning")
+            self._dedupe.add(f"secret_loc|{path}|{line}")
             self._add_finding(
-                domain="injection",
-                severity=normalize_severity(rule.get("security_severity_level")),
+                domain="secrets", severity="High",
+                title=f"Potential secret detected ({secret_type})",
+                evidence=[ev],
+                impact="Hardcoded credentials in the repository can be extracted from git history and used for unauthorized access.",
+                recommendation="Remove the secret, rotate the credential, and add a detection rule or pre-commit hook to prevent recurrence.",
+                source="secret-scanning", cwes=[798],
+                dedupe_key=f"secret-scanning|{secret_type}|{path}|{line}",
+            )
+        elif kind == "code-scanning":
+            tool_name = str(((alert.get("tool") or {}).get("name")) or "").strip().lower()
+            if "zap" in tool_name:
+                source = "zap"
+            elif "nuclei" in tool_name:
+                source = "nuclei"
+            elif "semgrep" in tool_name:
+                source = "semgrep"
+            elif "trivy" in tool_name:
+                source = "trivy"
+            else:
+                source = "codeql"
+
+            rule = alert.get("rule") or {}
+            rule_id = str(rule.get("id") or "code-scanning")
+            if rule_id.upper() in self.trivyignore:
+                return
+            most = alert.get("most_recent_instance") or {}
+            loc = most.get("location") or {}
+            raw_loc_path = str(loc.get("path") or "")
+            line = int(loc.get("start_line") or 1)
+            msg = most.get("message", {})
+            text = msg.get("text") if isinstance(msg, dict) else ""
+            help_text = str(rule.get("help") or rule.get("full_description") or rule.get("description") or rule.get("name") or text or "Code scanning alert")
+            title = str(rule.get("description") or rule.get("name") or text or rule_id).split("\n")[0][:160]
+
+            path = rel_path(raw_loc_path, self.root) if raw_loc_path else None
+            ev = cite(self.root, path, line, text or "") if path else None
+            if ev is None and source in ("zap", "nuclei") and raw_loc_path:
+                ev = self._cite_dast_target(raw_loc_path, text or title, source)
+                if not ev:
+                    return
+                dedupe_loc = f"{raw_loc_path}|{line}|{text[:80]}"
+                domain_path = ""
+            else:
+                if not path or not ev:
+                    return
+                snip = ev.get("snippet") or text or ""
+                if is_allowlisted_action_tag(snip, title):
+                    return
+                if is_internal_secrets_inherit(self.root, path, line, title):
+                    return
+                if is_ignorable_plaintext_http(path, snip, title):
+                    return
+                if is_test_or_spec_path(path):
+                    return
+                if is_tooling_subprocess_finding(path, rule_id, title):
+                    return
+                if f"semgrep|{rule_id}|{path}|{line}" in self._dedupe or f"trivy-mis|{rule_id}|{path}|{line}" in self._dedupe:
+                    return
+                dedupe_loc = f"{path}|{line}"
+                domain_path = path
+
+            tags = [str(t).lower() for t in (rule.get("tags") or [])]
+            is_trivy_vuln = source == "trivy" and (
+                bool(re.match(r"^(?:CVE-|GHSA-)", rule_id, re.I)) or "vulnerability" in tags
+            )
+            if is_trivy_vuln:
+                lock_dir = str(pathlib.PurePosixPath(domain_path or ".").parent)
+                m_pkg = re.search(r"Package:\s*([^\s,\n]+)", text + "\n" + help_text)
+                pkg = m_pkg.group(1) if m_pkg else None
+                if pkg and f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{rule_id.upper()}" in self._dedupe:
+                    return
+                if not pkg and f"dep_dir_adv|{lock_dir}|{rule_id.upper()}" in self._dedupe:
+                    return
+                self._dedupe.add(f"dep_dir_adv|{lock_dir}|{rule_id.upper()}")
+                if pkg:
+                    self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{rule_id.upper()}")
+                domain = "dependencies"
+            else:
+                meta = {"technology": rule.get("tags") or []}
+                domain = self._semgrep_domain(f"{rule_id} {title} {text}", meta, domain_path)
+                if source in ("zap", "nuclei") and domain == "injection":
+                    if not any(k in f"{rule_id} {title} {text}".lower() for k in ("sql", "xss", "inject", "eval", "exec", "command", "ssti", "xxe", "ssrf")):
+                        domain = "configuration"
+            sev_raw = rule.get("security_severity_level") or rule.get("severity") or most.get("level")
+            self._add_finding(
+                domain=domain,
+                severity=normalize_severity(sev_raw),
                 title=title,
                 evidence=[ev], impact=help_text[:400],
                 recommendation=str(rule.get("help") or "Follow code-scanning remediation guidance.")[:400],
-                source="codeql", cwes=extract_cwes(rule.get("tags")),
-                dedupe_key=f"codeql|{rule.get('id')}|{path}|{line}",
+                source=source, cwes=extract_cwes(rule.get("tags")),
+                dedupe_key=f"{source}|{rule_id}|{dedupe_loc}",
+                package=pkg if is_trivy_vuln else None,
             )
 
 
@@ -1172,7 +1362,7 @@ class Compiler:
 
         gcs_ids, seen = [], set()
         for f in self.findings:
-            if f.get("source") in ("semgrep", "codeql") and f["id"] not in seen:
+            if f.get("source") in ("semgrep", "codeql", "trivy", "zap", "nuclei") and f["id"] not in seen:
                 seen.add(f["id"])
                 gcs_ids.append(f["id"])
         if sem.get("ok"):
