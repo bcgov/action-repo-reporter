@@ -1824,12 +1824,13 @@ class SastEvidenceOn403Tests(unittest.TestCase):
         spec_rr.loader.exec_module(rr)
         return cf, rr
 
-    def _repo(self, tmp, workflows=None, extras=None, notes_403=True, semgrep_ok=True, workflows_api=None, workflows_api_fail=False):
+    def _repo(self, tmp, workflows=None, extras=None, notes_403=True, semgrep_ok=True, workflows_api=None, workflows_api_fail=False, readme=True, extra_notes=None):
         root = pathlib.Path(tmp) / "repo"
         ev = pathlib.Path(tmp) / "evidence"
         (root / ".github" / "workflows").mkdir(parents=True)
         ev.mkdir(parents=True)
-        (root / "README.md").write_text("# demo\n")
+        if readme:
+            (root / "README.md").write_text("# demo\n")
         (root / "src").mkdir()
         (root / "src" / "app.ts").write_text("export const ok = 1;\n")
         if workflows:
@@ -1857,6 +1858,8 @@ class SastEvidenceOn403Tests(unittest.TestCase):
         if workflows_api_fail:
             (ev / "actions-workflows.json").write_text("{}\n")
             notes.append("WARN: actions-workflows unavailable: gh: Resource not accessible by integration (HTTP 403)")
+        if extra_notes:
+            notes.extend(extra_notes)
         if notes:
             (ev / "NOTES.txt").write_text("\n".join(notes) + "\n")
         return root, ev
@@ -2030,6 +2033,83 @@ class SastEvidenceOn403Tests(unittest.TestCase):
             tools = {(i["tool"], i["kind"], i["file"]) for i in items}
             self.assertIn(("CodeQL", "config", ".github/codeql/codeql-config.yml"), tools)
             self.assertIn(("Sonar", "config", "sonar-project.properties"), tools)
+
+
+    def test_redacts_secret_like_sast_snippets(self):
+        cf, rr = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(tmp, workflows={
+                "analysis.yml": (
+                    "name: Analysis\n"
+                    "jobs:\n"
+                    "  sonar:\n"
+                    "    steps:\n"
+                    "      - uses: SonarSource/sonarqube-scan-action@v6\n"
+                    "        with:\n"
+                    "          sonar_token: s3cret-literal-token\n"
+                ),
+            })
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            blob = json.dumps(data) + "\n" + rr.render(data)
+            self.assertNotIn("s3cret-literal-token", blob)
+            self.assertTrue(any("[redacted]" in (i.get("snippet") or "") for i in data["sast_evidence"]))
+            self.assertTrue(any(i["tool"] == "Sonar" for i in data["sast_evidence"]))
+
+    def test_default_setup_only_without_readme_is_not_analyzed(self):
+        cf, rr = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(
+                tmp,
+                readme=False,
+                semgrep_ok=False,
+                workflows={"ci.yml": "name: CI\non: push\njobs: {}\n"},
+                workflows_api={
+                    "total_count": 1,
+                    "workflows": [
+                        {"name": "CodeQL", "path": "dynamic/github-code-scanning/codeql.yml", "state": "active"},
+                    ],
+                },
+            )
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            self.assertTrue(any(i["kind"] == "default-setup" for i in data["sast_evidence"]))
+            chapter = next(c for c in data["chapters"] if c["id"] == "code-scanning")
+            self.assertEqual("not_assessed", chapter["status"])
+            self.assertEqual([], chapter["evidence"])
+            self.assertIn("CodeQL", chapter["note"])
+            self.assertIn("default setup", chapter["note"])
+            self.assertNotRegex(chapter["note"], r"\bNo SAST\b")
+            md = rr.render(data)
+            self.assertIn("default setup", md)
+            self.assertNotRegex(md, r"\bNo SAST\b")
+            # validate-chapters must not reject the code-scanning chapter for missing cites
+            spec_vc = importlib.util.spec_from_file_location("vc", ROOT / "scripts/validate-chapters.py")
+            vc = importlib.util.module_from_spec(spec_vc)
+            spec_vc.loader.exec_module(vc)
+            errors = [e for e in vc.validate(data, md, root, ev) if e.startswith("code-scanning:")]
+            self.assertEqual([], errors)
+
+    def test_stale_workflows_warning_does_not_hide_later_success(self):
+        cf, _ = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(
+                tmp,
+                workflows_api={
+                    "total_count": 1,
+                    "workflows": [
+                        {"name": "CodeQL", "path": "dynamic/github-code-scanning/codeql.yml", "state": "active"},
+                    ],
+                },
+                extra_notes=[
+                    "WARN: actions-workflows unavailable: gh: Resource not accessible by integration (HTTP 403)",
+                    "INFO: actions-workflows → 1 workflow(s)",
+                    "  actions-workflows.json 180 bytes",
+                ],
+            )
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            self.assertTrue(any(i["kind"] == "default-setup" for i in data["sast_evidence"]))
+            self.assertTrue(data.get("sast_evidence"))
+            # latest status is success, so the stale 403 must not be treated as current
+            self.assertNotIn("default setup could not be confirmed", " ".join(data["coverage_gaps"]))
 
 
 

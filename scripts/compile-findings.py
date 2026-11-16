@@ -242,11 +242,21 @@ _SAST_WORKFLOW_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Trivy", re.compile(r"\btrivy\s+(fs|filesystem|image|config|repo|rootfs|sbom|vm)\b", re.I)),
 )
 _DEFAULT_SETUP_PATH_RE = re.compile(r"dynamic/github-code-scanning", re.I)
+_SAST_SECRET_ASSIGN_RE = re.compile(
+    r"(?i)(\b(?:sonar_token|sonar\.login|token|password|secret|passwd|api[_-]?key|"
+    r"authorization|access[_-]?key|private[_-]?key)\b\s*[:=]\s*)(\S+)"
+)
+
+
+def _sast_snippet(raw: str) -> str:
+    """Keep a short, publishable snippet; never copy literal credential values."""
+    text = (raw or "").strip()
+    return _SAST_SECRET_ASSIGN_RE.sub(r"\1[redacted]", text)[:240]
 
 
 def _sast_item(tool: str, kind: str, *, file: str | None = None, line: int | None = None,
                snippet: str = "", detail: str = "") -> dict:
-    item: dict[str, Any] = {"tool": tool, "kind": kind, "snippet": (snippet or "")[:240]}
+    item: dict[str, Any] = {"tool": tool, "kind": kind, "snippet": _sast_snippet(snippet)}
     if file:
         item["file"] = file
     if isinstance(line, int) and line >= 1:
@@ -317,6 +327,30 @@ def _sast_from_actions_workflows(data: Any) -> list[dict]:
     return found
 
 
+def _actions_workflows_query_ok(notes: str, data: Any) -> bool:
+    """Use the latest explicit workflow-list status; ignore file-size summary lines.
+
+    NOTES.txt is append-only, so a later successful fetch can sit after an older 403
+    warning. A stale warning must not hide default-setup evidence from the current JSON.
+    """
+    status: bool | None = None
+    for raw in notes.splitlines():
+        stripped = raw.strip()
+        # Evidence size summaries: "actions-workflows.json 123 bytes"
+        if re.search(r"actions-workflows\.json\s+\d+\s+bytes", stripped, re.I):
+            continue
+        low = stripped.lower()
+        if "actions-workflows" not in low:
+            continue
+        if stripped.startswith("WARN:") or "unavailable" in low or "403" in stripped:
+            status = False
+        elif stripped.startswith("INFO:"):
+            status = True
+    if status is not None:
+        return status
+    return data is not None
+
+
 def detect_sast_evidence(root: pathlib.Path, evidence: pathlib.Path | None = None,
                          notes: str = "") -> tuple[list[dict], bool | None]:
     """Detect CodeQL, Sonar, and Trivy from the clone and optional Actions workflow list.
@@ -357,18 +391,10 @@ def detect_sast_evidence(root: pathlib.Path, evidence: pathlib.Path | None = Non
     query_ok: bool | None = None
     if evidence is not None:
         wf_json = evidence / "actions-workflows.json"
-        fail_note = False
-        for line in notes.splitlines():
-            low = line.lower()
-            if "actions-workflows" in low and ("403" in line or "unavailable" in low or "failed" in low):
-                fail_note = True
-                break
         if wf_json.is_file():
             data = load_json(wf_json)
-            if fail_note or data is None:
-                query_ok = False
-            else:
-                query_ok = True
+            query_ok = _actions_workflows_query_ok(notes, data)
+            if query_ok:
                 items.extend(_sast_from_actions_workflows(data))
     return items, query_ok
 
@@ -1540,17 +1566,21 @@ class Compiler:
         sast_cites = []
         for item in self.sast_evidence:
             rel, line = item.get("file"), item.get("line")
-            if rel and isinstance(line, int):
-                ev = cite(self.root, rel, line, item.get("snippet") or "")
-                if ev:
-                    sast_cites.append(ev)
+            if rel and isinstance(line, int) and (self.root / rel).is_file():
+                # Use the already-redacted snippet; do not reread the source line.
+                sast_cites.append({
+                    "file": rel,
+                    "line": line,
+                    "snippet": _sast_snippet(str(item.get("snippet") or "")),
+                })
         gap = ""
         if self.source_ok.get("code-scanning") is False:
             gap = self._code_scanning_alert_gap()
         listed = format_sast_evidence(self.sast_evidence)
         # gap already names detected tools (or explains none were found); don't repeat.
         sast_suffix = (" " + gap) if gap else (f" In-repo SAST evidence: {listed}." if listed else "")
-        if sem.get("ok") or self.sast_evidence:
+        chapter_ev = bool(gcs_ids or sast_cites or arch_ev)
+        if (sem.get("ok") or self.sast_evidence) and chapter_ev:
             if sem.get("ok"):
                 note = tool_note("Semgrep", sem, "Public proxy for GitHub code-scanning until #96." + sast_suffix)
             else:
@@ -1566,13 +1596,21 @@ class Compiler:
                 "evidence": need_ev(gcs_ids, sast_cites or arch_ev),
             })
         else:
-            none_detected = (
-                " No CodeQL, Sonar, or Trivy workflow or GitHub code scanning default setup was detected."
-            )
-            if self.sast_default_setup_query_ok is False:
-                none_detected += (
-                    " The Actions workflow list could not be read, so default setup could not be confirmed."
+            none_detected = ""
+            if self.sast_evidence:
+                none_detected = (
+                    " In-repo SAST evidence is present"
+                    + (f" ({listed})" if listed else "")
+                    + " but has no clone-local file:line citation, so this chapter is not assessed."
                 )
+            else:
+                none_detected = (
+                    " No CodeQL, Sonar, or Trivy workflow or GitHub code scanning default setup was detected."
+                )
+                if self.sast_default_setup_query_ok is False:
+                    none_detected += (
+                        " The Actions workflow list could not be read, so default setup could not be confirmed."
+                    )
             base = tool_note("Semgrep", sem) if sem else "Semgrep failed; code-scanning chapter not assessed."
             chapters.append({
                 "id": "code-scanning", "status": "not_assessed",
