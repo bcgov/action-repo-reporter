@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate findings.json (cite-or-ask) and compute bounded risk score: 0 (spotless) to 100 (max risk).
 Findings whose file:line citations don't exist in the repo are rejected (moved to `rejected`).
+Development-only dependency findings stay listed but are excluded from the main score.
 --require IDs pass if present as an accepted open finding OR in `fixed`/`resolved` with a valid cite."""
 import argparse, json, math, pathlib, sys
 
@@ -66,7 +67,10 @@ def main():
     fixed_ok_list, fixed_bad = [], []
     for entry in fixed_raw:
         (fixed_ok_list if fixed_ok(entry, root) else fixed_bad).append(entry)
-    counts = {s: sum(f["severity"] == s for f in ok) for s in ("Critical", "High", "Medium", "Low")}
+    scored = [f for f in ok if f.get("dependency_scope") != "development"]
+    dev_only = [f for f in ok if f.get("dependency_scope") == "development"]
+    counts = {s: sum(f["severity"] == s for f in scored) for s in ("Critical", "High", "Medium", "Low")}
+    dev_counts = {s: sum(f["severity"] == s for f in dev_only) for s in ("Critical", "High", "Medium", "Low")}
     score = compute_risk_score(counts)
     satisfied = {f.get("id") for f in ok} | {e.get("id") for e in fixed_ok_list}
     missing = [r for r in o.require if r not in satisfied]
@@ -82,6 +86,9 @@ def main():
             "Low": min(5, round(l_cnt * 0.2)) if l_cnt > 0 else 0,
         },
         "accepted": len(ok),
+        "accepted_for_score": len(scored),
+        "dev_dependency_counts": dev_counts,
+        "dev_dependency_ids": [f.get("id") for f in dev_only],
         "rejected": [f.get("id") if isinstance(f, dict) else None for f in bad],
         "fixed_accepted": [e.get("id") for e in fixed_ok_list],
         "fixed_rejected": [e.get("id") if isinstance(e, dict) else None for e in fixed_bad],

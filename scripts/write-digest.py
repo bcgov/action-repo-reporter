@@ -99,6 +99,13 @@ def deterministic_digest(data: dict, report_link: str) -> str:
     if fixed:
         lines.append("Confirmed-fixed seeds/checks: " + ", ".join(e["id"] for e in fixed if e.get("id")) + ".")
         lines.append("")
+    dev_only = [f for f in findings if isinstance(f, dict) and f.get("dependency_scope") == "development"]
+    if dev_only:
+        lines.append(
+            f"{len(dev_only)} development-only dependency finding(s) are listed in the report "
+            "and excluded from the main score: " + ", ".join(f.get("id") for f in dev_only if f.get("id")) + "."
+        )
+        lines.append("")
     if gaps:
         lines.append("Named coverage gaps:")
         for g in gaps[:4]:

@@ -227,6 +227,209 @@ def cite(root: pathlib.Path, rel: str, line: int, snippet: str = "") -> dict | N
     return {"file": rel, "line": line, "snippet": snippet_at(root, rel, line, snippet)}
 
 
+RUNTIME_SCOPE = "runtime"
+DEVELOPMENT_SCOPE = "development"
+
+
+def classify_dependency_scope(root: pathlib.Path, manifest: str | None, package: str | None,
+                              hint: str | None = None) -> str:
+    """Classify a package as runtime or development. Unknown defaults to runtime so it stays in the main score."""
+    if hint in (RUNTIME_SCOPE, DEVELOPMENT_SCOPE):
+        return hint
+    if not package:
+        return RUNTIME_SCOPE
+    name = package.strip()
+    rel = manifest or ""
+    candidates: list[pathlib.Path] = []
+    if rel:
+        p = root / rel
+        if p.is_file():
+            candidates.append(p)
+        pkg_json = p.parent / "package.json" if p.parent else None
+        if pkg_json and pkg_json.is_file() and pkg_json not in candidates:
+            candidates.append(pkg_json)
+    # Walk parents for a manifest if the cite is a lockfile path
+    start = (root / rel).parent if rel else root
+    cur = start if start.is_dir() else root
+    try:
+        cur.relative_to(root)
+        in_root = True
+    except ValueError:
+        in_root = False
+    while in_root:
+        for fname in ("package-lock.json", "package.json", "composer.lock", "Pipfile.lock",
+                      "poetry.lock", "pnpm-lock.yaml", "yarn.lock", "Cargo.toml", "Gemfile"):
+            hit = cur / fname
+            if hit.is_file() and hit not in candidates:
+                candidates.append(hit)
+        if cur == root:
+            break
+        cur = cur.parent
+    for path in candidates:
+        scope = _scope_from_file(root, path, name)
+        if scope:
+            return scope
+    return RUNTIME_SCOPE
+
+
+def _scope_from_file(root: pathlib.Path, path: pathlib.Path, name: str) -> str | None:
+    try:
+        rel = str(path.resolve().relative_to(root.resolve()))
+    except (OSError, ValueError):
+        rel = path.name
+    text = safe_text(root, rel)
+    if text is None:
+        return None
+    fname = path.name
+    if fname == "package-lock.json":
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict):
+            flags = _npm_lock_dev_flags(data, name)
+            if flags:
+                return DEVELOPMENT_SCOPE if all(flags) else RUNTIME_SCOPE
+    if fname == "package.json":
+        return _package_json_scope(text, name)
+    if fname == "composer.lock":
+        return _composer_lock_scope(text, name)
+    if fname == "Pipfile.lock":
+        return _pipfile_lock_scope(text, name)
+    if fname == "poetry.lock":
+        return _poetry_lock_scope(text, name)
+    if fname in ("pnpm-lock.yaml", "yarn.lock"):
+        # No reliable transitivity without a YAML/graph parser; use sibling package.json first.
+        sibling = path.parent / "package.json"
+        if sibling.is_file():
+            scope = _package_json_scope(safe_text(root, str(sibling.relative_to(root))) or "", name)
+            if scope:
+                return scope
+    if fname == "Cargo.toml":
+        return _cargo_toml_scope(text, name)
+    return None
+
+
+def _npm_lock_dev_flags(data: dict, name: str) -> list[bool]:
+    flags: list[bool] = []
+    packages = data.get("packages")
+    suffix = f"node_modules/{name}"
+    if isinstance(packages, dict):
+        for key, meta in packages.items():
+            if not isinstance(meta, dict):
+                continue
+            k = str(key).replace("\\", "/")
+            if k == suffix or k.endswith("/" + suffix):
+                flags.append(meta.get("dev") is True)
+    deps = data.get("dependencies")
+    if isinstance(deps, dict):
+        def walk(tree: Any) -> None:
+            if not isinstance(tree, dict):
+                return
+            for pkg, meta in tree.items():
+                if not isinstance(meta, dict):
+                    continue
+                if pkg == name:
+                    flags.append(meta.get("dev") is True)
+                walk(meta.get("dependencies"))
+        walk(deps)
+    return flags
+
+
+def _package_json_scope(text: str, name: str) -> str | None:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    runtime_keys = ("dependencies", "optionalDependencies", "peerDependencies")
+    in_runtime = any(isinstance(data.get(k), dict) and name in data[k] for k in runtime_keys)
+    in_dev = isinstance(data.get("devDependencies"), dict) and name in data["devDependencies"]
+    if in_runtime:
+        return RUNTIME_SCOPE
+    if in_dev:
+        return DEVELOPMENT_SCOPE
+    return None
+
+
+def _composer_lock_scope(text: str, name: str) -> str | None:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    prod = {str(p.get("name")) for p in (data.get("packages") or []) if isinstance(p, dict)}
+    dev = {str(p.get("name")) for p in (data.get("packages-dev") or []) if isinstance(p, dict)}
+    if name in prod:
+        return RUNTIME_SCOPE
+    if name in dev:
+        return DEVELOPMENT_SCOPE
+    return None
+
+
+def _pipfile_lock_scope(text: str, name: str) -> str | None:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    default = data.get("default") if isinstance(data.get("default"), dict) else {}
+    develop = data.get("develop") if isinstance(data.get("develop"), dict) else {}
+    if name in default:
+        return RUNTIME_SCOPE
+    if name in develop:
+        return DEVELOPMENT_SCOPE
+    return None
+
+
+def _poetry_lock_scope(text: str, name: str) -> str | None:
+    for block in re.split(r"\n\[\[package\]\]\n", "\n" + text):
+        m = re.search(r'(?m)^name\s*=\s*["\']([^"\']+)["\']', block)
+        if not m or m.group(1) != name:
+            continue
+        cat = re.search(r'(?m)^category\s*=\s*["\']([^"\']+)["\']', block)
+        if cat and cat.group(1).lower() in ("dev", "development", "test"):
+            return DEVELOPMENT_SCOPE
+        groups = re.search(r'(?m)^groups\s*=\s*\[([^\]]+)\]', block)
+        if groups:
+            names = [g.strip().strip("\"'") for g in groups.group(1).split(",")]
+            if any(n in {"main", "default"} for n in names):
+                return RUNTIME_SCOPE
+            if names and all(n in {"dev", "development", "test", "docs"} for n in names):
+                return DEVELOPMENT_SCOPE
+        return RUNTIME_SCOPE
+    return None
+
+
+def _cargo_toml_scope(text: str, name: str) -> str | None:
+    # Direct deps only; transitives without a Cargo.lock graph default to runtime at the caller.
+    dev = runtime = False
+    section = ""
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line.startswith("[") and line.endswith("]"):
+            section = line.strip("[]").strip()
+            continue
+        m = re.match(r'["\']?([^"\'=\s]+)["\']?\s*=', line)
+        if not m:
+            continue
+        pkg = m.group(1)
+        if pkg != name:
+            continue
+        if section in {"dependencies", "workspace.dependencies"}:
+            runtime = True
+        elif section in {"dev-dependencies", "workspace.dev-dependencies"}:
+            dev = True
+    if runtime:
+        return RUNTIME_SCOPE
+    if dev:
+        return DEVELOPMENT_SCOPE
+    return None
+
+
 def is_allowlisted_action_tag(snippet: str, title: str) -> bool:
     """Allow floating tags for trusted official actions (actions/*, github/*, docker/*, bcgov/*)."""
     if not re.search(r"mutable tag|mutable.*branch|unpinned|pin.*action|commit sha", title, re.I):
@@ -447,7 +650,7 @@ class Compiler:
     def _add_finding(self, *, domain: str, severity: str, title: str, evidence: list,
                      impact: str, recommendation: str, source: str, cwes: list[int] | None = None,
                      dedupe_key: str | None = None, finding_id: str | None = None,
-                     package: str | None = None) -> str | None:
+                     package: str | None = None, dependency_scope: str | None = None) -> str | None:
         if not evidence:
             return None
         key = dedupe_key or f"{source}|{title}|{evidence[0].get('file')}|{evidence[0].get('line')}"
@@ -467,6 +670,11 @@ class Compiler:
         }
         if package:
             entry["package"] = package
+        if domain == "dependencies" or DOMAIN_PREFIX.get(domain) == "DEPS":
+            ev0 = evidence[0] if evidence and isinstance(evidence[0], dict) else {}
+            entry["dependency_scope"] = classify_dependency_scope(
+                self.root, ev0.get("file"), package, hint=dependency_scope,
+            )
         if cwes:
             entry["cwe"] = [f"CWE-{c}" for c in cwes]
             cats = owasp_for_cwes(cwes)
@@ -888,6 +1096,7 @@ class Compiler:
             if cve_id:
                 self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{cve_id.upper()}")
                 self._dedupe.add(f"dep_dir_adv|{lock_dir}|{cve_id.upper()}")
+            scope_hint = str(dep.get("scope") or "").strip().lower()
             self._add_finding(
                 domain="dependencies", severity=sev, title=f"{pkg}: {summary}",
                 evidence=[ev], impact=str(adv.get("description") or summary)[:400],
@@ -895,6 +1104,7 @@ class Compiler:
                 cwes=extract_cwes(adv.get("cve_id")) or [1104],
                 dedupe_key=f"dep|{lock}|{pkg}|{(dep.get('manifest_path') or '')}|{ghsa}",
                 package=pkg,
+                dependency_scope=scope_hint if scope_hint in (RUNTIME_SCOPE, DEVELOPMENT_SCOPE) else None,
             )
         elif kind == "secret-scanning":
             candidates: list[dict] = []
@@ -1408,7 +1618,12 @@ class Compiler:
             })
             chapters.append({
                 "id": "dependencies", "status": "analyzed",
-                "note": " ".join(bits) + f" {len(dep_ids)} dependency finding(s) promoted after dedupe.",
+                "note": " ".join(bits) + (
+                    f" {len(dep_ids)} dependency finding(s) promoted after dedupe"
+                    f" ({sum(1 for f in self.findings if f.get('id') in dep_ids and f.get('dependency_scope') != DEVELOPMENT_SCOPE)} runtime, "
+                    f"{sum(1 for f in self.findings if f.get('id') in dep_ids and f.get('dependency_scope') == DEVELOPMENT_SCOPE)} development-only;"
+                    " development-only are listed but excluded from the main score)."
+                ),
                 "finding_ids": dep_ids, "evidence": need_ev(dep_ids, arch_ev),
             })
         else:

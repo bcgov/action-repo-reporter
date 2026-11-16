@@ -87,6 +87,12 @@ def render_dashboard(reports_dir: pathlib.Path, artifact_map: dict[str, str] | N
         lines.append(f"<summary><strong>{repo}</strong> — Score: {score} / 100 ({len(findings)} findings, {len(fixed)} fixed)</summary>")
         lines.append("")
         lines.append(f"Commit: `{commit}`")
+        dev_ids = s.get("dev_dependency_ids") or []
+        if dev_ids:
+            lines.append(
+                f"{len(dev_ids)} development-only dependency finding(s) listed but excluded "
+                f"from the main score: {', '.join(str(i) for i in dev_ids)}."
+            )
         lines.append("")
 
         if cover_letter.is_file():
