@@ -85,8 +85,8 @@ gaps (including when GitHub's own alert list was not read due to token scope). I
 does **not** write a long EY consulting narrative and is **not** a full
 runtime penetration test. Green CI / schema pass is not EY quality.
 
-GitHub-alert collection reads `dependabot`, `code-scanning`, and `secret-scanning`
-alert lists when `SECURITY_ALERTS_TOKEN` has access (`compile-findings.py`
-currently ingests `dependabot` and `code-scanning` alerts into findings while
-`secret-scanning` chapter findings rely on `gitleaks`), alongside the public scans
-(`semgrep`, `gitleaks`, `osv-scanner`, `trivy`, and semantic domain analyzers).
+GitHub-alert collection reads `dependabot`, `code-scanning` (including DAST URL
+alerts from `bcgov/actions/scan-url` such as OWASP ZAP and Nuclei), and
+`secret-scanning` alert lists when `SECURITY_ALERTS_TOKEN` has access,
+deduplicating them against the public scans (`semgrep`, `gitleaks`,
+`osv-scanner`, `trivy`, and semantic domain analyzers).
