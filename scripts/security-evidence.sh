@@ -58,6 +58,19 @@ api() { # name endpoint ; failures (403/404) -> empty list + note
 api dependabot     "repos/$REPO/dependabot/alerts?state=open&per_page=100"
 api code-scanning  "repos/$REPO/code-scanning/alerts?state=open&per_page=100"
 api secret-scanning-raw "repos/$REPO/secret-scanning/alerts?state=open&per_page=100"
+# Actions workflow list is not an alerts API. It reveals GitHub code scanning
+# default setup (path dynamic/github-code-scanning/...), which is not in the clone.
+# Public repos typically allow this with contents/actions:read; no PAT.
+if ! gh api --paginate "repos/$REPO/actions/workflows" 2> "$OUT/actions-workflows.err" \
+    | jq -s '{total_count: (map(.total_count) | max // 0), workflows: (map(.workflows // []) | add)}' \
+    > "$OUT/actions-workflows.json"; then
+  echo '{}' > "$OUT/actions-workflows.json"
+  note "WARN: actions-workflows unavailable: $(head -c 200 "$OUT/actions-workflows.err" 2>/dev/null || true)"
+else
+  count="$(jq '.total_count // (.workflows|length) // 0' "$OUT/actions-workflows.json" 2>/dev/null || echo 0)"
+  note "INFO: actions-workflows → $count workflow(s)"
+fi
+rm -f "$OUT/actions-workflows.err"
 # Redact plaintext secrets before any agent sees them.
 # Fail closed: raw file is always removed; on any jq error no partial output is kept and we exit.
 if ! jq -e '[ .[] | del(.secret) | .secret = "REDACTED" ]' "$OUT/secret-scanning-raw.json" > "$OUT/secret-scanning.json.tmp"; then
@@ -124,7 +137,7 @@ run trivy    trivy "${trivy_args[@]}" target
 # Summarize sizes so CI logs show whether scanners produced real evidence.
 note "Evidence in $OUT/:"
 ls -la "$OUT" | tee -a "$OUT/NOTES.txt" >&2
-for f in dependabot.json code-scanning.json secret-scanning.json semgrep.json gitleaks.json osv-scanner.json trivy.json; do
+for f in dependabot.json code-scanning.json secret-scanning.json semgrep.json gitleaks.json osv-scanner.json trivy.json actions-workflows.json; do
   ensure "$OUT/$f" '{}'
   note "  $f $(wc -c < "$OUT/$f") bytes"
 done

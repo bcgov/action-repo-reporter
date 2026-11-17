@@ -492,6 +492,177 @@ def _cargo_toml_scope(text: str, name: str) -> str | None:
         return DEVELOPMENT_SCOPE
     return None
 
+# In-repo SAST signals that do not depend on GitHub alert APIs.
+# github/codeql-action/upload-sarif is used by many tools and is not CodeQL evidence.
+_SAST_WORKFLOW_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("CodeQL", re.compile(r"uses:\s*['\"]?github/codeql-action/(init|analyze|autobuild)\b", re.I)),
+    ("Sonar", re.compile(
+        r"uses:\s*['\"]?sonarsource/(sonarqube-scan-action|sonarcloud-github-action|"
+        r"sonarqube-quality-gate-action)\b",
+        re.I,
+    )),
+    ("Sonar", re.compile(r"\b(sonar-scanner|sonar:sonar|sonarqube-scanner)\b", re.I)),
+    ("Sonar", re.compile(r"^\s*sonar_token:\s*\S", re.I)),
+    ("Trivy", re.compile(r"uses:\s*['\"]?aquasecurity/trivy(?:-action)?\b", re.I)),
+    ("Trivy", re.compile(r"\btrivy\s+(fs|filesystem|image|config|repo|rootfs|sbom|vm)\b", re.I)),
+)
+_DEFAULT_SETUP_PATH_RE = re.compile(r"dynamic/github-code-scanning", re.I)
+_SAST_SECRET_ASSIGN_RE = re.compile(
+    r"(?i)(\b(?:sonar_token|sonar\.login|token|password|secret|passwd|api[_-]?key|"
+    r"authorization|access[_-]?key|private[_-]?key)\b\s*[:=]\s*)(\S+)"
+)
+
+
+def _sast_snippet(raw: str) -> str:
+    """Keep a short, publishable snippet; never copy literal credential values."""
+    text = (raw or "").strip()
+    return _SAST_SECRET_ASSIGN_RE.sub(r"\1[redacted]", text)[:240]
+
+
+def _sast_item(tool: str, kind: str, *, file: str | None = None, line: int | None = None,
+               snippet: str = "", detail: str = "") -> dict:
+    item: dict[str, Any] = {"tool": tool, "kind": kind, "snippet": _sast_snippet(snippet)}
+    if file:
+        item["file"] = file
+    if isinstance(line, int) and line >= 1:
+        item["line"] = line
+    if detail:
+        item["detail"] = detail
+    return item
+
+
+def format_sast_evidence(items: list[dict]) -> str:
+    """Human-readable list of detected SAST tools; empty when none were found."""
+    parts: list[str] = []
+    for item in items:
+        tool = str(item.get("tool") or "SAST")
+        kind = str(item.get("kind") or "evidence")
+        rel = item.get("file")
+        line = item.get("line")
+        if rel and isinstance(line, int):
+            parts.append(f"{tool} ({kind} {rel}:{line})")
+        elif item.get("detail"):
+            parts.append(f"{tool} ({item['detail']})")
+        else:
+            parts.append(f"{tool} ({kind})")
+    return "; ".join(parts)
+
+
+def _sast_from_workflow_text(rel: str, text: str) -> list[dict]:
+    found: list[dict] = []
+    seen: set[tuple] = set()
+    for idx, raw in enumerate(text.splitlines(), 1):
+        if raw.lstrip().startswith("#"):
+            continue
+        for tool, pat in _SAST_WORKFLOW_PATTERNS:
+            if pat.search(raw):
+                key = (tool, "workflow", rel, idx)
+                if key in seen:
+                    continue
+                seen.add(key)
+                found.append(_sast_item(tool, "workflow", file=rel, line=idx, snippet=raw.strip()))
+    return found
+
+
+def _sast_from_actions_workflows(data: Any) -> list[dict]:
+    workflows: list[Any]
+    if isinstance(data, dict):
+        workflows = data.get("workflows") or []
+    elif isinstance(data, list):
+        workflows = data
+    else:
+        return []
+    found: list[dict] = []
+    for wf in workflows:
+        if not isinstance(wf, dict):
+            continue
+        path = str(wf.get("path") or "")
+        state = str(wf.get("state") or "active").lower()
+        if state and state != "active":
+            continue
+        if not _DEFAULT_SETUP_PATH_RE.search(path):
+            continue
+        name = str(wf.get("name") or "CodeQL")
+        found.append(_sast_item(
+            "CodeQL",
+            "default-setup",
+            detail=f"GitHub code scanning default setup ({path or name}); not stored in the repository",
+            snippet=path or name,
+        ))
+    return found
+
+
+def _actions_workflows_query_ok(notes: str, data: Any) -> bool:
+    """Use the latest explicit workflow-list status; ignore file-size summary lines.
+
+    NOTES.txt is append-only, so a later successful fetch can sit after an older 403
+    warning. A stale warning must not hide default-setup evidence from the current JSON.
+    """
+    status: bool | None = None
+    for raw in notes.splitlines():
+        stripped = raw.strip()
+        # Evidence size summaries: "actions-workflows.json 123 bytes"
+        if re.search(r"actions-workflows\.json\s+\d+\s+bytes", stripped, re.I):
+            continue
+        low = stripped.lower()
+        if "actions-workflows" not in low:
+            continue
+        if stripped.startswith("WARN:") or "unavailable" in low or "403" in stripped:
+            status = False
+        elif stripped.startswith("INFO:"):
+            status = True
+    if status is not None:
+        return status
+    return data is not None
+
+
+def detect_sast_evidence(root: pathlib.Path, evidence: pathlib.Path | None = None,
+                         notes: str = "") -> tuple[list[dict], bool | None]:
+    """Detect CodeQL, Sonar, and Trivy from the clone and optional Actions workflow list.
+
+    Returns (items, default_setup_query_ok). default_setup_query_ok is True when
+    evidence/actions-workflows.json was read successfully, False when that query
+    failed, and None when the file is absent (typical in unit tests).
+    """
+    items: list[dict] = []
+    wf_dir = root / ".github" / "workflows"
+    if wf_dir.is_dir():
+        for wf in sorted(wf_dir.glob("*.yml")) + sorted(wf_dir.glob("*.yaml")):
+            rel = str(wf.relative_to(root))
+            text = safe_text(root, rel)
+            if text:
+                items.extend(_sast_from_workflow_text(rel, text))
+
+    config_candidates = [
+        ("CodeQL", "config", ".github/codeql/codeql-config.yml"),
+        ("CodeQL", "config", ".github/codeql/codeql-config.yaml"),
+        ("CodeQL", "config", "codeql-config.yml"),
+        ("Sonar", "config", "sonar-project.properties"),
+        ("Sonar", "config", ".sonarcloud.properties"),
+    ]
+    seen_files = {(i.get("tool"), i.get("kind"), i.get("file"), i.get("line")) for i in items}
+    for tool, kind, rel in config_candidates:
+        if not (root / rel).is_file():
+            continue
+        key = (tool, kind, rel, 1)
+        if key in seen_files:
+            continue
+        ev = cite(root, rel, 1)
+        if not ev:
+            continue
+        seen_files.add(key)
+        items.append(_sast_item(tool, kind, file=rel, line=1, snippet=ev.get("snippet") or rel))
+
+    query_ok: bool | None = None
+    if evidence is not None:
+        wf_json = evidence / "actions-workflows.json"
+        if wf_json.is_file():
+            data = load_json(wf_json)
+            query_ok = _actions_workflows_query_ok(notes, data)
+            if query_ok:
+                items.extend(_sast_from_actions_workflows(data))
+    return items, query_ok
+
 
 def is_allowlisted_action_tag(snippet: str, title: str) -> bool:
     """Allow floating tags for trusted official actions (actions/*, github/*, docker/*, bcgov/*)."""
@@ -901,6 +1072,9 @@ class Compiler:
             "semgrep": None, "gitleaks": None, "osv-scanner": None, "trivy": None,
             "dependabot": None, "code-scanning": None, "secret-scanning": None,
         }
+        self.sast_evidence, self.sast_default_setup_query_ok = detect_sast_evidence(
+            root, evidence, self.notes,
+        )
 
     def _commit(self) -> str:
         try:
@@ -1535,16 +1709,39 @@ class Compiler:
             ev["snippet"] = f"[{source.upper()}] {raw_target}: {text}".strip(": ")[:240]
         return ev
 
+    def _code_scanning_alert_gap(self) -> str:
+        """403/unavailable is a gap in alert contents, not proof that SAST is absent."""
+        base = (
+            "GitHub's own alert list was not read (code-scanning: HTTP 403 or unavailable). "
+            "This is a coverage gap for alert contents, not proof that SAST is absent."
+        )
+        listed = format_sast_evidence(self.sast_evidence)
+        if listed:
+            return base + f" In-repo SAST evidence: {listed}."
+        extra = (
+            " No CodeQL, Sonar, or Trivy workflow or GitHub code scanning default setup "
+            "was detected in the clone"
+        )
+        if self.sast_default_setup_query_ok is False:
+            extra += "; the Actions workflow list could not be read, so default setup could not be confirmed"
+        elif self.sast_default_setup_query_ok is True:
+            extra += " or the Actions workflow list"
+        extra += "."
+        return base + extra
+
     def ingest_github_alerts(self):
         for name in ("dependabot", "code-scanning", "secret-scanning"):
             data = load_json(self.evidence / f"{name}.json")
             fail = self._notes_mention_failure(name)
             if fail and ("403" in fail or "unavailable" in fail.lower()):
                 self._mark_source(name, False, detail=fail)
-                self.coverage_gaps.append(
-                    f"GitHub's own alert list was not read ({name}: HTTP 403 or unavailable). "
-                    "Public scanner proxy used instead."
-                )
+                if name == "code-scanning":
+                    self.coverage_gaps.append(self._code_scanning_alert_gap())
+                else:
+                    self.coverage_gaps.append(
+                        f"GitHub's own alert list was not read ({name}: HTTP 403 or unavailable). "
+                        "Public scanner proxy used instead."
+                    )
                 continue
             if isinstance(data, list):
                 self._mark_source(name, True, version="github-api", count=len(data),
@@ -2086,17 +2283,58 @@ class Compiler:
             if f.get("source") in ("semgrep", "codeql", "trivy", "zap", "nuclei") and f["id"] not in seen:
                 seen.add(f["id"])
                 gcs_ids.append(f["id"])
-        if sem.get("ok"):
-            gap = " GitHub's own alert list was not read (403/unavailable)." if self.source_ok.get("code-scanning") is False else ""
+        sast_cites = []
+        for item in self.sast_evidence:
+            rel, line = item.get("file"), item.get("line")
+            if rel and isinstance(line, int) and (self.root / rel).is_file():
+                # Use the already-redacted snippet; do not reread the source line.
+                sast_cites.append({
+                    "file": rel,
+                    "line": line,
+                    "snippet": _sast_snippet(str(item.get("snippet") or "")),
+                })
+        gap = ""
+        if self.source_ok.get("code-scanning") is False:
+            gap = self._code_scanning_alert_gap()
+        listed = format_sast_evidence(self.sast_evidence)
+        # gap already names detected tools (or explains none were found); don't repeat.
+        sast_suffix = (" " + gap) if gap else (f" In-repo SAST evidence: {listed}." if listed else "")
+        chapter_ev = bool(gcs_ids or sast_cites or arch_ev)
+        if (sem.get("ok") or self.sast_evidence) and chapter_ev:
+            if sem.get("ok"):
+                note = tool_note("Semgrep", sem, "Public proxy for GitHub code-scanning until #96." + sast_suffix)
+            else:
+                reason = (sem.get("detail") if sem else "") or "Semgrep did not produce usable evidence in this run."
+                note = (
+                    f"{reason} Code-scanning chapter is still analyzed from in-repo SAST evidence."
+                    + sast_suffix
+                )
             chapters.append({
                 "id": "code-scanning", "status": "analyzed",
-                "note": tool_note("Semgrep", sem, "Public proxy for GitHub code-scanning until #96." + gap),
-                "finding_ids": gcs_ids[:20], "evidence": need_ev(gcs_ids, arch_ev),
+                "note": note,
+                "finding_ids": gcs_ids[:20],
+                "evidence": need_ev(gcs_ids, sast_cites or arch_ev),
             })
         else:
+            none_detected = ""
+            if self.sast_evidence:
+                none_detected = (
+                    " In-repo SAST evidence is present"
+                    + (f" ({listed})" if listed else "")
+                    + " but has no clone-local file:line citation, so this chapter is not assessed."
+                )
+            else:
+                none_detected = (
+                    " No CodeQL, Sonar, or Trivy workflow or GitHub code scanning default setup was detected."
+                )
+                if self.sast_default_setup_query_ok is False:
+                    none_detected += (
+                        " The Actions workflow list could not be read, so default setup could not be confirmed."
+                    )
+            base = tool_note("Semgrep", sem) if sem else "Semgrep failed; code-scanning chapter not assessed."
             chapters.append({
                 "id": "code-scanning", "status": "not_assessed",
-                "note": tool_note("Semgrep", sem) if sem else "Semgrep failed; code-scanning chapter not assessed.",
+                "note": base + none_detected + ((" " + gap) if gap else ""),
                 "finding_ids": [], "evidence": [],
             })
 
@@ -2260,6 +2498,7 @@ class Compiler:
             "coverage_gaps": gaps,
             "chapters": chapters,
             "tools": self.tool_meta,
+            "sast_evidence": self.sast_evidence,
             "generator": "scripts/compile-findings.py",
         }
 

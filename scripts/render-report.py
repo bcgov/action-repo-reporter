@@ -195,6 +195,42 @@ def render(data: dict) -> str:
             )
         lines.append("")
 
+    # SAST evidence from the clone / default setup, independent of alert API access.
+    lines.append("## SAST evidence")
+    lines.append("")
+    sast = data.get("sast_evidence") or []
+    if sast:
+        lines.append(
+            "The following SAST tools are present as workflows, config, or GitHub code "
+            "scanning default setup. A 403 from GitHub alert APIs is a gap in alert "
+            "contents, not proof that SAST is absent."
+        )
+        lines.append("")
+        for item in sast:
+            if not isinstance(item, dict):
+                continue
+            tool = item.get("tool") or "unknown"
+            kind = item.get("kind") or "evidence"
+            rel = item.get("file")
+            line = item.get("line")
+            detail = item.get("detail") or item.get("snippet") or ""
+            if rel and line:
+                loc = f"{rel}:{line}"
+                snippet = item.get("snippet") or ""
+                extra = f" (`{snippet}`)" if snippet else ""
+                lines.append(f"- **{tool}** ({kind}) — {loc}{extra}")
+            else:
+                lines.append(f"- **{tool}** ({kind}) — {detail}".rstrip())
+        lines.append("")
+    else:
+        lines.append(
+            "No CodeQL, Sonar, or Trivy workflow or GitHub code scanning default setup "
+            "was detected in the clone or the Actions workflow list (when that list "
+            "could be read). This does not claim the repository has no SAST; only that "
+            "those signals were not found."
+        )
+        lines.append("")
+
     # Chapters
     arch_info = data.get("architecture") or {}
     mermaid_diag = arch_info.get("mermaid")

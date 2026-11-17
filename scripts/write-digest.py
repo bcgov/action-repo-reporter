@@ -113,6 +113,14 @@ def deterministic_digest(data: dict, report_link: str) -> str:
             "and excluded from the main score: " + ", ".join(f.get("id") for f in dev_only if f.get("id")) + "."
         )
         lines.append("")
+    sast = [i for i in (data.get("sast_evidence") or []) if isinstance(i, dict) and i.get("tool")]
+    if sast:
+        tools = ", ".join(sorted({str(i["tool"]) for i in sast}))
+        lines.append(
+            f"In-repo SAST evidence (workflows, config, or GitHub default setup): {tools}. "
+            "A 403 reading GitHub alerts is a gap in alert contents, not proof that SAST is absent."
+        )
+        lines.append("")
     if gaps:
         lines.append("Named coverage gaps:")
         for g in gaps[:4]:
