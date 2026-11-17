@@ -1812,6 +1812,305 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
             self.assertEqual(7, len(comp.findings), by_source)
 
 
+class SastEvidenceOn403Tests(unittest.TestCase):
+    """#119: CodeQL/Sonar/Trivy stay visible as SAST evidence when alert APIs 403."""
+
+    def load_cf(self):
+        spec = importlib.util.spec_from_file_location("compile_findings", ROOT / "scripts/compile-findings.py")
+        cf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cf)
+        spec_rr = importlib.util.spec_from_file_location("render_report", ROOT / "scripts/render-report.py")
+        rr = importlib.util.module_from_spec(spec_rr)
+        spec_rr.loader.exec_module(rr)
+        return cf, rr
+
+    def _repo(self, tmp, workflows=None, extras=None, notes_403=True, semgrep_ok=True, workflows_api=None, workflows_api_fail=False, readme=True, extra_notes=None):
+        root = pathlib.Path(tmp) / "repo"
+        ev = pathlib.Path(tmp) / "evidence"
+        (root / ".github" / "workflows").mkdir(parents=True)
+        ev.mkdir(parents=True)
+        if readme:
+            (root / "README.md").write_text("# demo\n")
+        (root / "src").mkdir()
+        (root / "src" / "app.ts").write_text("export const ok = 1;\n")
+        if workflows:
+            for name, body in workflows.items():
+                (root / ".github" / "workflows" / name).write_text(body)
+        else:
+            (root / ".github" / "workflows" / "ci.yml").write_text("name: CI\non: push\njobs: {}\n")
+        if extras:
+            for rel, body in extras.items():
+                path = root / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(body)
+        notes = []
+        if notes_403:
+            notes.append("WARN: code-scanning unavailable: gh: Resource not accessible by integration (HTTP 403)")
+            (ev / "code-scanning.json").write_text("[]\n")
+        if semgrep_ok:
+            (ev / "semgrep.json").write_text(json.dumps({
+                "version": "1.184.0",
+                "paths": {"scanned": ["src/app.ts"]},
+                "results": [],
+            }))
+        if workflows_api is not None:
+            (ev / "actions-workflows.json").write_text(json.dumps(workflows_api))
+        if workflows_api_fail:
+            (ev / "actions-workflows.json").write_text("{}\n")
+            notes.append("WARN: actions-workflows unavailable: gh: Resource not accessible by integration (HTTP 403)")
+        if extra_notes:
+            notes.extend(extra_notes)
+        if notes:
+            (ev / "NOTES.txt").write_text("\n".join(notes) + "\n")
+        return root, ev
+
+    def test_detects_codeql_sonar_trivy_workflows_and_skips_upload_sarif(self):
+        cf, rr = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(tmp, workflows={
+                "analysis.yml": (
+                    "name: Analysis\n"
+                    "jobs:\n"
+                    "  codeql:\n"
+                    "    steps:\n"
+                    "      - uses: github/codeql-action/init@v4\n"
+                    "      - uses: github/codeql-action/analyze@v4\n"
+                    "      - uses: github/codeql-action/upload-sarif@v4\n"
+                    "  sonar:\n"
+                    "    steps:\n"
+                    "      - uses: bcgov/actions/test-and-analyse@main\n"
+                    "        with:\n"
+                    "          sonar_token: ${{ env.sonar_token }}\n"
+                    "  trivy:\n"
+                    "    steps:\n"
+                    "      - uses: aquasecurity/trivy-action@v0.36.0\n"
+                    "        with:\n"
+                    "          scan-type: fs\n"
+                ),
+                "scheduled.yml": (
+                    "name: Other\n"
+                    "jobs:\n"
+                    "  zap:\n"
+                    "    steps:\n"
+                    "      - uses: github/codeql-action/upload-sarif@v4\n"
+                ),
+            })
+            items, query_ok = cf.detect_sast_evidence(root, ev)
+            self.assertIsNone(query_ok)
+            tools = {(i["tool"], i["kind"], i.get("file")) for i in items}
+            self.assertIn(("CodeQL", "workflow", ".github/workflows/analysis.yml"), tools)
+            self.assertIn(("Sonar", "workflow", ".github/workflows/analysis.yml"), tools)
+            self.assertIn(("Trivy", "workflow", ".github/workflows/analysis.yml"), tools)
+            # upload-sarif alone, including the scheduled.yml copy, is not CodeQL
+            codeql_files = {i["file"] for i in items if i["tool"] == "CodeQL"}
+            self.assertNotIn(".github/workflows/scheduled.yml", codeql_files)
+            self.assertFalse(any("upload-sarif" in (i.get("snippet") or "") for i in items if i["tool"] == "CodeQL"))
+
+            # Commented-out uses must not count
+            (root / ".github" / "workflows" / "commented.yml").write_text(
+                "name: No\n#      - uses: github/codeql-action/init@v4\n"
+            )
+            items2, _ = cf.detect_sast_evidence(root, ev)
+            self.assertFalse(any(i.get("file") == ".github/workflows/commented.yml" for i in items2))
+
+    def test_403_with_in_repo_sast_does_not_imply_no_sast(self):
+        cf, rr = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(tmp, workflows={
+                "analysis.yml": (
+                    "name: Analysis\n"
+                    "jobs:\n"
+                    "  sast:\n"
+                    "    steps:\n"
+                    "      - uses: github/codeql-action/init@v4\n"
+                    "      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25\n"
+                    "      - uses: SonarSource/sonarqube-scan-action@v6\n"
+                ),
+            })
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            chapter = next(c for c in data["chapters"] if c["id"] == "code-scanning")
+            self.assertEqual("analyzed", chapter["status"])
+            blob = "\n".join(data["coverage_gaps"] + [chapter["note"], json.dumps(data.get("sast_evidence"))])
+            self.assertIn("not proof that SAST is absent", blob)
+            self.assertIn("CodeQL", blob)
+            self.assertIn("Sonar", blob)
+            self.assertIn("Trivy", blob)
+            self.assertNotRegex(blob, r"\bNo SAST\b")
+            md = rr.render(data)
+            self.assertIn("## SAST evidence", md)
+            self.assertIn("**CodeQL**", md)
+            self.assertIn("**Sonar**", md)
+            self.assertIn("**Trivy**", md)
+            self.assertNotRegex(md, r"\bNo SAST\b")
+            self.assertTrue(any(
+                e.get("file") == ".github/workflows/analysis.yml"
+                for e in chapter["evidence"]
+            ) or any(f.get("source") == "semgrep" for f in data["findings"]))
+
+    def test_default_setup_from_actions_workflow_list(self):
+        cf, rr = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(
+                tmp,
+                workflows={"ci.yml": "name: CI\non: push\njobs: {}\n"},
+                workflows_api={
+                    "total_count": 2,
+                    "workflows": [
+                        {"name": "CI", "path": ".github/workflows/ci.yml", "state": "active"},
+                        {"name": "CodeQL", "path": "dynamic/github-code-scanning/codeql.yml", "state": "active"},
+                        {"name": "Old CodeQL", "path": "dynamic/github-code-scanning/codeql.yml", "state": "disabled"},
+                    ],
+                },
+            )
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            tools = [(i["tool"], i["kind"]) for i in data["sast_evidence"]]
+            self.assertIn(("CodeQL", "default-setup"), tools)
+            self.assertEqual(1, sum(1 for t, k in tools if t == "CodeQL" and k == "default-setup"))
+            chapter = next(c for c in data["chapters"] if c["id"] == "code-scanning")
+            self.assertEqual("analyzed", chapter["status"])
+            self.assertIn("default setup", chapter["note"])
+            self.assertIn("not proof that SAST is absent", " ".join(data["coverage_gaps"]))
+            md = rr.render(data)
+            self.assertIn("default setup", md)
+            self.assertNotRegex(md, r"\bNo SAST\b")
+
+    def test_semgrep_failure_still_analyzed_when_codeql_present(self):
+        cf, _ = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(
+                tmp,
+                workflows={"codeql.yml": "jobs:\n  x:\n    steps:\n      - uses: github/codeql-action/analyze@v4\n"},
+                semgrep_ok=False,
+            )
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            chapter = next(c for c in data["chapters"] if c["id"] == "code-scanning")
+            self.assertEqual("analyzed", chapter["status"])
+            self.assertIn("CodeQL", chapter["note"])
+            self.assertTrue(any(e.get("file") == ".github/workflows/codeql.yml" for e in chapter["evidence"]))
+            self.assertNotRegex(chapter["note"], r"\bNo SAST\b")
+
+    def test_403_without_detected_sast_does_not_say_no_sast(self):
+        cf, rr = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(
+                tmp,
+                workflows={"ci.yml": "name: CI\non: push\njobs: {}\n"},
+                workflows_api={"total_count": 1, "workflows": [
+                    {"name": "CI", "path": ".github/workflows/ci.yml", "state": "active"},
+                ]},
+            )
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            self.assertEqual([], data["sast_evidence"])
+            gaps = " ".join(data["coverage_gaps"])
+            self.assertIn("not proof that SAST is absent", gaps)
+            self.assertIn("No CodeQL, Sonar, or Trivy workflow or GitHub code scanning default setup", gaps)
+            self.assertNotRegex(gaps, r"\bNo SAST\b")
+            md = rr.render(data)
+            self.assertIn("## SAST evidence", md)
+            self.assertNotRegex(md, r"\bNo SAST\b")
+
+    def test_actions_workflows_403_is_shown_as_query_gap(self):
+        cf, _ = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(tmp, workflows_api_fail=True)
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            gaps = " ".join(data["coverage_gaps"])
+            self.assertIn("default setup could not be confirmed", gaps)
+            self.assertIn("not proof that SAST is absent", gaps)
+            self.assertNotRegex(gaps, r"\bNo SAST\b")
+
+    def test_config_files_count_as_sast_evidence(self):
+        cf, _ = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(
+                tmp,
+                extras={
+                    ".github/codeql/codeql-config.yml": "name: default\n",
+                    "sonar-project.properties": "sonar.projectKey=demo\n",
+                },
+            )
+            items, _ = cf.detect_sast_evidence(root, ev)
+            tools = {(i["tool"], i["kind"], i["file"]) for i in items}
+            self.assertIn(("CodeQL", "config", ".github/codeql/codeql-config.yml"), tools)
+            self.assertIn(("Sonar", "config", "sonar-project.properties"), tools)
+
+
+    def test_redacts_secret_like_sast_snippets(self):
+        cf, rr = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(tmp, workflows={
+                "analysis.yml": (
+                    "name: Analysis\n"
+                    "jobs:\n"
+                    "  sonar:\n"
+                    "    steps:\n"
+                    "      - uses: SonarSource/sonarqube-scan-action@v6\n"
+                    "        with:\n"
+                    "          sonar_token: s3cret-literal-token\n"
+                ),
+            })
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            blob = json.dumps(data) + "\n" + rr.render(data)
+            self.assertNotIn("s3cret-literal-token", blob)
+            self.assertTrue(any("[redacted]" in (i.get("snippet") or "") for i in data["sast_evidence"]))
+            self.assertTrue(any(i["tool"] == "Sonar" for i in data["sast_evidence"]))
+
+    def test_default_setup_only_without_readme_is_not_analyzed(self):
+        cf, rr = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(
+                tmp,
+                readme=False,
+                semgrep_ok=False,
+                workflows={"ci.yml": "name: CI\non: push\njobs: {}\n"},
+                workflows_api={
+                    "total_count": 1,
+                    "workflows": [
+                        {"name": "CodeQL", "path": "dynamic/github-code-scanning/codeql.yml", "state": "active"},
+                    ],
+                },
+            )
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            self.assertTrue(any(i["kind"] == "default-setup" for i in data["sast_evidence"]))
+            chapter = next(c for c in data["chapters"] if c["id"] == "code-scanning")
+            self.assertEqual("not_assessed", chapter["status"])
+            self.assertEqual([], chapter["evidence"])
+            self.assertIn("CodeQL", chapter["note"])
+            self.assertIn("default setup", chapter["note"])
+            self.assertNotRegex(chapter["note"], r"\bNo SAST\b")
+            md = rr.render(data)
+            self.assertIn("default setup", md)
+            self.assertNotRegex(md, r"\bNo SAST\b")
+            # validate-chapters must not reject the code-scanning chapter for missing cites
+            spec_vc = importlib.util.spec_from_file_location("vc", ROOT / "scripts/validate-chapters.py")
+            vc = importlib.util.module_from_spec(spec_vc)
+            spec_vc.loader.exec_module(vc)
+            errors = [e for e in vc.validate(data, md, root, ev) if e.startswith("code-scanning:")]
+            self.assertEqual([], errors)
+
+    def test_stale_workflows_warning_does_not_hide_later_success(self):
+        cf, _ = self.load_cf()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._repo(
+                tmp,
+                workflows_api={
+                    "total_count": 1,
+                    "workflows": [
+                        {"name": "CodeQL", "path": "dynamic/github-code-scanning/codeql.yml", "state": "active"},
+                    ],
+                },
+                extra_notes=[
+                    "WARN: actions-workflows unavailable: gh: Resource not accessible by integration (HTTP 403)",
+                    "INFO: actions-workflows → 1 workflow(s)",
+                    "  actions-workflows.json 180 bytes",
+                ],
+            )
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            self.assertTrue(any(i["kind"] == "default-setup" for i in data["sast_evidence"]))
+            self.assertTrue(data.get("sast_evidence"))
+            # latest status is success, so the stale 403 must not be treated as current
+            self.assertNotIn("default setup could not be confirmed", " ".join(data["coverage_gaps"]))
+
 class WithdrawnFixedAdvisoryTests(unittest.TestCase):
     def load(self):
         spec_cf = importlib.util.spec_from_file_location("cf_withdrawn", ROOT / "scripts/compile-findings.py")
@@ -2245,8 +2544,5 @@ class WithdrawnFixedAdvisoryTests(unittest.TestCase):
             self.assertEqual([], c.findings)
             self.assertEqual(2, len(c.fixed))
             self.assertEqual({"api/package-lock.json", "web/package-lock.json"}, {e["file"] for e in c.fixed})
-
-
-
 if __name__ == "__main__":
     unittest.main()
