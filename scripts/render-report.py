@@ -68,7 +68,7 @@ def render(data: dict) -> str:
         f"{len(findings)} open finding(s) "
         f"(Critical {counts['Critical']}, High {counts['High']}, "
         f"Medium {counts['Medium']}, Low {counts['Low']}); "
-        f"{len(fixed)} confirmed-fixed. "
+        f"{len(fixed)} confirmed-fixed / not-a-finding. "
         f"Top findings: {top_txt}. "
         f"Coverage gaps: {gap_txt}.{vex_txt}{chain_txt} "
         "Score is written separately by score.py."
@@ -284,7 +284,7 @@ def render(data: dict) -> str:
                 )
             else:
                 # fixed entry referenced by id
-                lines.append(f"- **{fid}** (confirmed-fixed)")
+                lines.append(f"- **{fid}** (confirmed-fixed / not a finding)")
         for ev in c.get("evidence") or []:
             if isinstance(ev, dict) and "file" in ev and "line" in ev:
                 lines.append(f"- {ev['file']}:{ev['line']}")
@@ -323,7 +323,7 @@ def render(data: dict) -> str:
         lines.append("")
 
     # Fixed
-    lines.append("## Confirmed fixed")
+    lines.append("## Confirmed fixed / not a finding")
     lines.append("")
     if not fixed:
         lines.append("None.")
