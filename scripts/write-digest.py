@@ -106,6 +106,13 @@ def deterministic_digest(data: dict, report_link: str) -> str:
             if note and entry.get("disposition") == "not_a_finding":
                 lines.append(f"- {entry.get('id')}: {note}")
         lines.append("")
+    dev_only = [f for f in findings if isinstance(f, dict) and f.get("dependency_scope") == "development"]
+    if dev_only:
+        lines.append(
+            f"{len(dev_only)} development-only dependency finding(s) are listed in the report "
+            "and excluded from the main score: " + ", ".join(f.get("id") for f in dev_only if f.get("id")) + "."
+        )
+        lines.append("")
     sast = [i for i in (data.get("sast_evidence") or []) if isinstance(i, dict) and i.get("tool")]
     if sast:
         tools = ", ".join(sorted({str(i["tool"]) for i in sast}))

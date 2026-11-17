@@ -39,6 +39,7 @@ def render(data: dict) -> str:
     tools = data.get("tools") or {}
 
     counts = Counter(f.get("severity") for f in findings if f.get("severity") in SEV_ORDER)
+    dev_only = [f for f in findings if f.get("dependency_scope") == "development"]
     domain_counts = Counter(f.get("domain") for f in findings if f.get("domain"))
     vex = data.get("vex_summary") or {}
     chains = data.get("attack_chains") or []
@@ -64,13 +65,19 @@ def render(data: dict) -> str:
     chain_txt = ""
     if chains:
         chain_txt = f" Correlated {len(chains)} exploit attack chain(s)."
+    dev_txt = ""
+    if dev_only:
+        dev_txt = (
+            f" {len(dev_only)} development-only dependency finding(s) are listed "
+            "but excluded from the main score."
+        )
     lines.append(
         f"{len(findings)} open finding(s) "
         f"(Critical {counts['Critical']}, High {counts['High']}, "
         f"Medium {counts['Medium']}, Low {counts['Low']}); "
         f"{len(fixed)} confirmed-fixed / not-a-finding. "
         f"Top findings: {top_txt}. "
-        f"Coverage gaps: {gap_txt}.{vex_txt}{chain_txt} "
+        f"Coverage gaps: {gap_txt}.{vex_txt}{chain_txt}{dev_txt} "
         "Score is written separately by score.py."
     )
     lines.append("")
@@ -302,6 +309,12 @@ def render(data: dict) -> str:
         lines.append(f"- **Severity:** {f.get('severity')}")
         lines.append(f"- **Domain:** {f.get('domain')}")
         lines.append(f"- **Source:** {f.get('source')}")
+        if f.get("dependency_scope"):
+            scope = f.get("dependency_scope")
+            if scope == "development":
+                lines.append("- **Dependency scope:** development-only (listed; excluded from the main score)")
+            else:
+                lines.append(f"- **Dependency scope:** {scope}")
         if f.get("reachability"):
             lines.append(f"- **Reachability:** {f.get('reachability')} (VEX status: `{f.get('vex_status')}`)")
         if f.get("vex_justification"):

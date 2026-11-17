@@ -1812,6 +1812,307 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
             self.assertEqual(7, len(comp.findings), by_source)
 
 
+class RuntimeDevDependencySplitTests(unittest.TestCase):
+    """#120: development-only dependency findings stay listed but leave the main score."""
+
+    def load(self):
+        spec_cf = importlib.util.spec_from_file_location("cf", ROOT / "scripts/compile-findings.py")
+        cf = importlib.util.module_from_spec(spec_cf)
+        spec_cf.loader.exec_module(cf)
+        spec_sc = importlib.util.spec_from_file_location("score", ROOT / "scripts/score.py")
+        score = importlib.util.module_from_spec(spec_sc)
+        spec_sc.loader.exec_module(score)
+        spec_rr = importlib.util.spec_from_file_location("rr", ROOT / "scripts/render-report.py")
+        rr = importlib.util.module_from_spec(spec_rr)
+        spec_rr.loader.exec_module(rr)
+        return cf, score, rr
+
+    def test_classify_npm_lockfile_and_manifests(self):
+        cf, _, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            lock = {
+                "packages": {
+                    "": {"dependencies": {"express": "4.18.0"}, "devDependencies": {"jest": "29.0.0"}},
+                    "node_modules/express": {"version": "4.18.0"},
+                    "node_modules/jest": {"version": "29.0.0", "dev": True},
+                    "node_modules/minimatch": {"version": "3.0.4", "dev": True},
+                    "apps/api/node_modules/minimatch": {"version": "5.1.0"},
+                }
+            }
+            (root / "package-lock.json").write_text(json.dumps(lock))
+            (root / "package.json").write_text(json.dumps({
+                "dependencies": {"express": "4.18.0"},
+                "devDependencies": {"jest": "29.0.0"},
+            }))
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "package-lock.json", "express"))
+            self.assertEqual("development", cf.classify_dependency_scope(root, "package-lock.json", "jest"))
+            # One production install of minimatch beats a dev-only copy
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "package-lock.json", "minimatch"))
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "package.json", "express"))
+            self.assertEqual("development", cf.classify_dependency_scope(root, "package.json", "jest"))
+            # Unknown transitives with no lock flags default to runtime (stay in the score)
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "package-lock.json", "left-pad"))
+
+    def test_classify_composer_pipfile_poetry_cargo(self):
+        cf, _, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "composer.lock").write_text(json.dumps({
+                "packages": [{"name": "symfony/http-foundation"}],
+                "packages-dev": [{"name": "phpunit/phpunit"}],
+            }))
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "composer.lock", "symfony/http-foundation"))
+            self.assertEqual("development", cf.classify_dependency_scope(root, "composer.lock", "phpunit/phpunit"))
+            (root / "Pipfile.lock").write_text(json.dumps({
+                "default": {"requests": {"version": "==2.0.0"}},
+                "develop": {"pytest": {"version": "==8.0.0"}},
+            }))
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "Pipfile.lock", "requests"))
+            self.assertEqual("development", cf.classify_dependency_scope(root, "Pipfile.lock", "pytest"))
+            (root / "poetry.lock").write_text(
+                '[[package]]\nname = "django"\ncategory = "main"\n\n'
+                '[[package]]\nname = "pytest"\ncategory = "dev"\n'
+            )
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "poetry.lock", "django"))
+            self.assertEqual("development", cf.classify_dependency_scope(root, "poetry.lock", "pytest"))
+            (root / "Cargo.toml").write_text(
+                "[dependencies]\nserde = \"1\"\n[dev-dependencies]\nmockito = \"1\"\n"
+            )
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "Cargo.toml", "serde"))
+            self.assertEqual("development", cf.classify_dependency_scope(root, "Cargo.toml", "mockito"))
+
+    def test_dev_only_listed_but_excluded_from_main_score(self):
+        cf, score, rr = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "repo"
+            ev = pathlib.Path(tmp) / "evidence"
+            root.mkdir(); ev.mkdir()
+            (root / "README.md").write_text("# demo\n")
+            (root / "src").mkdir()
+            (root / "src" / "app.ts").write_text("import express from 'express';\n")
+            (root / "package.json").write_text(json.dumps({
+                "name": "demo",
+                "dependencies": {"express": "4.18.0"},
+                "devDependencies": {"minimatch": "3.0.4"},
+            }))
+            (root / "package-lock.json").write_text(json.dumps({
+                "packages": {
+                    "": {"dependencies": {"express": "4.18.0"}, "devDependencies": {"minimatch": "3.0.4"}},
+                    "node_modules/express": {"version": "4.18.2"},
+                    "node_modules/minimatch": {"version": "3.0.4", "dev": True},
+                },
+                "dependencies": {
+                    "express": {"version": "4.18.2"},
+                    "minimatch": {"version": "3.0.4", "dev": True},
+                },
+            }))
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [
+                    {
+                        "source": {"path": "package-lock.json"},
+                        "packages": [
+                            {
+                                "package": {"name": "express", "version": "4.18.2"},
+                                "vulnerabilities": [{
+                                    "id": "GHSA-runtime-demo",
+                                    "summary": "express runtime issue",
+                                    "database_specific": {"severity": "HIGH"},
+                                }],
+                            },
+                            {
+                                "package": {"name": "minimatch", "version": "3.0.4"},
+                                "vulnerabilities": [{
+                                    "id": "GHSA-g3hv-75wg-m249",
+                                    "summary": "minimatch ReDoS",
+                                    "database_specific": {"severity": "HIGH"},
+                                }],
+                            },
+                        ],
+                    }
+                ]
+            }))
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            deps = [f for f in data["findings"] if f.get("domain") == "DEPS"]
+            by_pkg = {f["package"]: f for f in deps}
+            self.assertIn("express", by_pkg)
+            self.assertIn("minimatch", by_pkg)
+            self.assertEqual("runtime", by_pkg["express"]["dependency_scope"])
+            self.assertEqual("development", by_pkg["minimatch"]["dependency_scope"])
+
+            findings_path = pathlib.Path(tmp) / "findings.json"
+            findings_path.write_text(json.dumps(data, indent=2))
+            out = pathlib.Path(tmp) / "score.json"
+            rc = score.main.__wrapped__ if hasattr(score.main, "__wrapped__") else None
+            # Call score.main via argv
+            old_argv = sys.argv
+            try:
+                sys.argv = ["score.py", str(findings_path), "--repo-dir", str(root), "--out", str(out)]
+                try:
+                    score.main()
+                    rc_code = 0
+                except SystemExit as exc:
+                    rc_code = exc.code or 0
+            finally:
+                sys.argv = old_argv
+            self.assertEqual(0, rc_code)
+            scored = json.loads(out.read_text())
+            self.assertIn("GHSA-g3hv-75wg-m249", by_pkg["minimatch"]["title"])
+            self.assertEqual([by_pkg["minimatch"]["id"]], scored["dev_dependency_ids"])
+            self.assertEqual("High", by_pkg["express"]["severity"])
+            self.assertEqual(1, scored["counts"]["High"])
+            self.assertEqual(0, scored["counts"]["Low"] + scored["counts"]["Medium"] + scored["counts"]["Critical"])
+            self.assertEqual(1, scored["dev_dependency_counts"]["High"] + scored["dev_dependency_counts"]["Low"]
+                             + scored["dev_dependency_counts"]["Medium"] + scored["dev_dependency_counts"]["Critical"])
+            self.assertEqual(2, scored["accepted"])
+            self.assertEqual(1, scored["accepted_for_score"])
+            # Main score is one High (8), not two Highs (16)
+            self.assertEqual(8, scored["score"])
+
+            md = rr.render(data)
+            self.assertIn("development-only", md)
+            self.assertIn("excluded from the main score", md)
+            self.assertIn(by_pkg["minimatch"]["id"], md)
+            self.assertIn(by_pkg["express"]["id"], md)
+            chapter = next(c for c in data["chapters"] if c["id"] == "dependencies")
+            self.assertIn(by_pkg["minimatch"]["id"], chapter["finding_ids"])
+            self.assertIn("development-only are listed but excluded from the main score", chapter["note"])
+
+    def test_dependabot_scope_hint_and_unknown_defaults_runtime(self):
+        cf, _, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "repo"
+            ev = pathlib.Path(tmp) / "evidence"
+            root.mkdir(); ev.mkdir()
+            (root / "README.md").write_text("# demo\n")
+            (root / "package-lock.json").write_text(json.dumps({
+                "packages": {
+                    "node_modules/left-pad": {"version": "1.3.0"},
+                    "node_modules/eslint": {"version": "8.0.0"},
+                }
+            }))
+            (ev / "dependabot.json").write_text(json.dumps([
+                {
+                    "dependency": {
+                        "package": {"name": "eslint"},
+                        "manifest_path": "package-lock.json",
+                        "scope": "development",
+                    },
+                    "security_advisory": {"ghsa_id": "GHSA-dev-hint", "severity": "high", "summary": "eslint dev"},
+                },
+                {
+                    "dependency": {
+                        "package": {"name": "left-pad"},
+                        "manifest_path": "package-lock.json",
+                    },
+                    "security_advisory": {"ghsa_id": "GHSA-runtime-unknown", "severity": "medium", "summary": "left-pad"},
+                },
+            ]))
+            comp = cf.Compiler("bcgov/myapp", root, ev)
+            comp.ingest_github_alerts()
+            by_pkg = {f["package"]: f for f in comp.findings if f.get("package")}
+            self.assertEqual("development", by_pkg["eslint"]["dependency_scope"])
+            self.assertEqual("runtime", by_pkg["left-pad"]["dependency_scope"])
+
+    def test_does_not_use_other_ecosystem_or_parent_manifests(self):
+        cf, _, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "package.json").write_text(json.dumps({"devDependencies": {"debug": "4.0.0"}}))
+            (root / "poetry.lock").write_text('[[package]]\nname = "debug"\ncategory = "main"\n')
+            # Poetry cite must not inherit npm devDependencies for the same name
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "poetry.lock", "debug"))
+            service = root / "service"
+            service.mkdir()
+            (service / "yarn.lock").write_text('# yarn lockfile v1\n')
+            # A service yarn lock must not inherit the root package.json dev entry
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "service/yarn.lock", "debug"))
+
+    def test_poetry_runtime_block_wins_over_earlier_dev_block(self):
+        cf, _, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "poetry.lock").write_text(
+                '[[package]]\nname = "foo"\ncategory = "dev"\n\n'
+                '[[package]]\nname = "foo"\ngroups = ["main"]\n'
+            )
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "poetry.lock", "foo"))
+
+    def test_cargo_target_runtime_overrides_dev_declaration(self):
+        cf, _, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "Cargo.toml").write_text(
+                "[dev-dependencies]\n"
+                "openssl = \"0.10\"\n"
+                "[target.'cfg(unix)'.dependencies]\n"
+                "openssl = \"0.10\"\n"
+                "[dependencies.serde]\n"
+                "version = \"1\"\n"
+            )
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "Cargo.toml", "openssl"))
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "Cargo.toml", "serde"))
+
+    def test_dependabot_scope_merges_into_existing_finding(self):
+        cf, _, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "repo"
+            ev = pathlib.Path(tmp) / "evidence"
+            root.mkdir(); ev.mkdir()
+            (root / "README.md").write_text("# demo\n")
+            (root / "yarn.lock").write_text("# yarn lockfile v1\n")
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [{
+                    "source": {"path": "yarn.lock"},
+                    "packages": [{
+                        "package": {"name": "eslint", "version": "8.0.0"},
+                        "vulnerabilities": [{"id": "GHSA-dev-hint", "summary": "eslint", "database_specific": {"severity": "HIGH"}}],
+                    }],
+                }]
+            }))
+            (ev / "dependabot.json").write_text(json.dumps([{
+                "dependency": {
+                    "package": {"name": "eslint"},
+                    "manifest_path": "yarn.lock",
+                    "scope": "development",
+                },
+                "security_advisory": {"ghsa_id": "GHSA-dev-hint", "severity": "high", "summary": "eslint"},
+            }]))
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            deps = [f for f in data["findings"] if f.get("package") == "eslint"]
+            self.assertEqual(1, len(deps), deps)
+            self.assertEqual("development", deps[0]["dependency_scope"])
+
+            # Positive runtime lockfile evidence still wins over a later development hint
+            root2 = pathlib.Path(tmp) / "repo2"
+            ev2 = pathlib.Path(tmp) / "evidence2"
+            root2.mkdir(); ev2.mkdir()
+            (root2 / "README.md").write_text("# demo\n")
+            (root2 / "package-lock.json").write_text(json.dumps({
+                "packages": {"node_modules/express": {"version": "4.18.2"}}
+            }))
+            (ev2 / "osv-scanner.json").write_text(json.dumps({
+                "results": [{
+                    "source": {"path": "package-lock.json"},
+                    "packages": [{
+                        "package": {"name": "express", "version": "4.18.2"},
+                        "vulnerabilities": [{"id": "GHSA-runtime", "summary": "express", "database_specific": {"severity": "HIGH"}}],
+                    }],
+                }]
+            }))
+            (ev2 / "dependabot.json").write_text(json.dumps([{
+                "dependency": {
+                    "package": {"name": "express"},
+                    "manifest_path": "package-lock.json",
+                    "scope": "development",
+                },
+                "security_advisory": {"ghsa_id": "GHSA-runtime", "severity": "high", "summary": "express"},
+            }]))
+            data2 = cf.Compiler("bcgov/myapp", root2, ev2).run()
+            deps2 = [f for f in data2["findings"] if f.get("package") == "express"]
+            self.assertEqual(1, len(deps2), deps2)
+            self.assertEqual("runtime", deps2[0]["dependency_scope"])
+
 class SastEvidenceOn403Tests(unittest.TestCase):
     """#119: CodeQL/Sonar/Trivy stay visible as SAST evidence when alert APIs 403."""
 
@@ -2544,5 +2845,7 @@ class WithdrawnFixedAdvisoryTests(unittest.TestCase):
             self.assertEqual([], c.findings)
             self.assertEqual(2, len(c.fixed))
             self.assertEqual({"api/package-lock.json", "web/package-lock.json"}, {e["file"] for e in c.fixed})
+
+
 if __name__ == "__main__":
     unittest.main()
