@@ -441,7 +441,7 @@ def withdrawn_reason(record: dict) -> str | None:
     texts: list[Any] = []
     for obj in nested:
         texts.extend([obj.get("summary"), obj.get("details"), obj.get("description"),
-                      obj.get("Title"), obj.get("title")])
+                      obj.get("Description"), obj.get("Title"), obj.get("title")])
     for text in texts:
         raw = str(text or "")
         if re.search(r"(?i)(?:^|\n)\s*withdrawn advisory\b", raw) or re.search(
@@ -522,6 +522,51 @@ def already_fixed_reason(record: dict, package: str | None, installed: str | Non
     return _osv_already_fixed_reason(record, package, installed)
 
 
+def _osv_range_intervals(rng: dict) -> list[tuple[str, str | None, bool]] | None:
+    """Split an OSV range's events into (introduced, end, end_inclusive) intervals.
+
+    A later `introduced` starts a new interval (reintroduction). Unparseable
+    event sequences return None so the caller leaves the finding open.
+    """
+    intervals: list[tuple[str, str | None, bool]] = []
+    introduced: str | None = None
+    for ev in rng.get("events") or []:
+        if not isinstance(ev, dict):
+            return None
+        if "introduced" in ev:
+            if introduced is not None:
+                return None
+            introduced = ev.get("introduced") or "0"
+        if "fixed" in ev or "last_affected" in ev:
+            if introduced is None:
+                introduced = "0"
+            if "fixed" in ev:
+                intervals.append((introduced, ev.get("fixed"), False))
+            else:
+                intervals.append((introduced, ev.get("last_affected"), True))
+            introduced = None
+    if introduced is not None:
+        intervals.append((introduced, None, False))
+    return intervals
+
+
+def _version_in_interval(installed: tuple[int, ...], introduced: str, end: str | None,
+                         end_inclusive: bool) -> bool | None:
+    intro_v = (0,) if str(introduced) in ("0", "0.0.0") else _simple_version(str(introduced))
+    if intro_v is None:
+        return None
+    if _version_cmp(installed, intro_v) < 0:
+        return False
+    if end is None:
+        return True
+    end_v = _simple_version(str(end))
+    if end_v is None:
+        return None
+    if end_inclusive:
+        return _version_cmp(installed, end_v) <= 0
+    return _version_cmp(installed, end_v) < 0
+
+
 def _osv_already_fixed_reason(record: dict, package: str | None, installed: str | None) -> str | None:
     inst = _simple_version(installed)
     affected = record.get("affected")
@@ -537,7 +582,7 @@ def _osv_already_fixed_reason(record: dict, package: str | None, installed: str 
     matching = named or matching
     if not matching:
         return None
-    saw_fixed_range = False
+    saw_interval = False
     for entry in matching:
         versions = {str(v) for v in (entry.get("versions") or [])}
         if installed is not None and str(installed) in versions:
@@ -548,44 +593,24 @@ def _osv_already_fixed_reason(record: dict, package: str | None, installed: str 
         for rng in ranges:
             if not isinstance(rng, dict):
                 return None
-            introduced, fixed, last_affected = "0", None, None
-            for ev in rng.get("events") or []:
-                if not isinstance(ev, dict):
-                    continue
-                if "introduced" in ev:
-                    introduced = ev.get("introduced") or "0"
-                if "fixed" in ev:
-                    fixed = ev.get("fixed")
-                if "last_affected" in ev:
-                    last_affected = ev.get("last_affected")
-            if not fixed and not last_affected:
+            intervals = _osv_range_intervals(rng)
+            if intervals is None:
                 return None
-            intro_v = (0,) if str(introduced) in ("0", "0.0.0") else _simple_version(str(introduced))
-            if intro_v is None:
-                return None
-            if _version_cmp(inst, intro_v) < 0:
-                continue
-            if fixed:
-                fixed_v = _simple_version(str(fixed))
-                if fixed_v is None:
+            for intro, end, inclusive in intervals:
+                inside = _version_in_interval(inst, intro, end, inclusive)
+                if inside is None:
                     return None
-                if _version_cmp(inst, fixed_v) < 0:
+                if inside:
                     return None
-                saw_fixed_range = True
-            else:
-                last_v = _simple_version(str(last_affected))
-                if last_v is None:
-                    return None
-                if _version_cmp(inst, last_v) <= 0:
-                    return None
-                saw_fixed_range = True
-    if not saw_fixed_range:
+                saw_interval = True
+    if not saw_interval:
         return None
     vid = str(record.get("id") or "advisory")
     return (
         f"{package or 'package'} {installed} is already past the patched version in {vid}; "
         "not an open finding."
     )
+
 
 
 class Compiler:
@@ -601,7 +626,8 @@ class Compiler:
         self.tool_meta: dict[str, dict] = {}
         self.domain_counters: dict[str, int] = defaultdict(int)
         self._dedupe: set[str] = set()
-        self._advisory_disposition: dict[str, dict] = {}
+        self._withdrawn_advisories: dict[str, dict] = {}
+        self._fixed_installs: dict[str, dict] = {}
         self.trivyignore: set[str] = load_trivyignore(root)
         self.notes = (evidence / "NOTES.txt").read_text(errors="replace") if (evidence / "NOTES.txt").is_file() else ""
         self.source_ok: dict[str, bool | None] = {
@@ -660,41 +686,75 @@ class Compiler:
         self.findings.append(entry)
         return fid
 
-    def _register_advisory_ids(self, entry: dict, ids: list[str]) -> None:
-        for item in advisory_ids_from(*ids):
-            self._advisory_disposition[item.upper()] = entry
+    def _register_withdrawn(self, entry: dict, ids: list[str]) -> None:
+        for item in advisory_ids_from(*ids, *(entry.get("advisory_ids") or [])):
+            self._withdrawn_advisories[item.upper()] = entry
 
-    def _existing_disposition(self, ids: list[str]) -> dict | None:
+    def _existing_withdrawn(self, ids: list[str]) -> dict | None:
         for item in advisory_ids_from(*ids):
-            found = self._advisory_disposition.get(item.upper())
+            found = self._withdrawn_advisories.get(item.upper())
             if found:
                 return found
         return None
 
-    def _mark_dep_advisory_dedupe(self, lock: str | None, lock_dir: str | None,
-                                  package: str | None, ids: list[str]) -> None:
-        for item in advisory_ids_from(*ids):
-            key = item.upper()
-            if lock_dir is not None:
-                self._dedupe.add(f"dep_dir_adv|{lock_dir}|{key}")
-                if package:
-                    self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{package}|{key}")
-            if lock and package:
-                # version-agnostic fallback keys are the dir/package ones above
-                pass
+    def _install_key(self, lock: str | None, package: str | None,
+                     installed: str | None, advisory_id: str) -> str:
+        return f"{lock or ''}|{package or ''}|{installed or ''}|{advisory_id.upper()}"
 
-    def _reclassify_open_finding(self, ids: list[str], package: str | None, reason: str) -> dict | None:
+    def _register_fixed_install(self, entry: dict, ids: list[str], *, lock: str | None,
+                                package: str | None, installed: str | None) -> None:
+        for item in advisory_ids_from(*ids, *(entry.get("advisory_ids") or [])):
+            self._fixed_installs[self._install_key(lock, package, installed, item)] = entry
+
+    def _existing_fixed_install(self, ids: list[str], *, lock: str | None,
+                                package: str | None, installed: str | None) -> dict | None:
+        for item in advisory_ids_from(*ids):
+            found = self._fixed_installs.get(self._install_key(lock, package, installed, item))
+            if found:
+                return found
+        return None
+
+    def _finding_matches_advisory(self, finding: dict, ids: list[str]) -> bool:
         needles = {item.upper() for item in advisory_ids_from(*ids)}
-        for i, finding in enumerate(self.findings):
+        if not needles:
+            return False
+        stored = {item.upper() for item in (finding.get("advisory_ids") or [])}
+        if stored:
+            return bool(needles & stored)
+        blob = " ".join(
+            str(finding.get(k) or "") for k in ("title", "impact", "recommendation")
+        )
+        for needle in needles:
+            if re.search(r"(?<![A-Za-z0-9-])" + re.escape(needle) + r"(?![A-Za-z0-9-])", blob, re.I):
+                return True
+        return False
+
+    def _finding_lock(self, finding: dict) -> str | None:
+        evs = finding.get("evidence") or []
+        if evs and isinstance(evs[0], dict):
+            return evs[0].get("file")
+        return None
+
+    def _reclassify_open_findings(
+        self, ids: list[str], *, package: str | None, reason: str,
+        lock: str | None = None, installed: str | None = None, all_installs: bool = False,
+    ) -> list[dict]:
+        moved: list[dict] = []
+        remaining: list[dict] = []
+        for finding in self.findings:
             if finding.get("domain") not in ("DEPS", "dependencies"):
+                remaining.append(finding)
                 continue
             if package and finding.get("package") and finding.get("package") != package:
+                remaining.append(finding)
                 continue
-            stored = {item.upper() for item in (finding.get("advisory_ids") or [])}
-            blob = " ".join(
-                str(finding.get(k) or "") for k in ("id", "title", "impact", "recommendation")
-            ).upper()
-            if needles and not (needles & stored) and not any(n in blob for n in needles):
+            if not all_installs:
+                finding_lock = self._finding_lock(finding)
+                if lock and finding_lock and finding_lock != lock:
+                    remaining.append(finding)
+                    continue
+            if not self._finding_matches_advisory(finding, ids):
+                remaining.append(finding)
                 continue
             ev0 = (finding.get("evidence") or [{}])[0] if finding.get("evidence") else {}
             entry = {
@@ -709,23 +769,41 @@ class Compiler:
                 "disposition": "not_a_finding",
                 "advisory_ids": advisory_ids_from(*(finding.get("advisory_ids") or []), *ids),
             }
-            self.findings.pop(i)
             self.fixed.append(entry)
-            return entry
-        return None
+            moved.append(entry)
+        self.findings = remaining
+        return moved
 
-    def _record_not_a_finding(self, *, ids: list[str], package: str | None, evidence: list,
-                              reason: str, source: str) -> dict:
-        existing = self._existing_disposition(ids)
-        if existing:
-            if reason and (not existing.get("note") or existing.get("note") == "Already recorded as not a finding."):
-                existing["note"] = reason
-            self._register_advisory_ids(existing, ids)
-            return existing
-        moved = self._reclassify_open_finding(ids, package, reason)
-        if moved:
-            self._register_advisory_ids(moved, ids)
-            return moved
+    def _record_not_a_finding(
+        self, *, ids: list[str], package: str | None, evidence: list,
+        reason: str, source: str, kind: str, lock: str | None = None,
+        installed: str | None = None,
+    ) -> dict:
+        if kind == "withdrawn":
+            moved = self._reclassify_open_findings(
+                ids, package=package, reason=reason, all_installs=True,
+            )
+            existing = self._existing_withdrawn(ids)
+            if existing:
+                self._register_withdrawn(existing, ids)
+                for entry in moved:
+                    self._register_withdrawn(entry, ids)
+                return existing
+            if moved:
+                for entry in moved:
+                    self._register_withdrawn(entry, ids)
+                return moved[0]
+        else:
+            existing = self._existing_fixed_install(ids, lock=lock, package=package, installed=installed)
+            if existing:
+                return existing
+            moved = self._reclassify_open_findings(
+                ids, package=package, reason=reason, lock=lock, installed=installed, all_installs=False,
+            )
+            if moved:
+                for entry in moved:
+                    self._register_fixed_install(entry, ids, lock=lock, package=package, installed=installed)
+                return moved[0]
         ev0 = evidence[0] if evidence and isinstance(evidence[0], dict) else {}
         entry = {
             "id": self._next_id("dependencies"),
@@ -740,7 +818,10 @@ class Compiler:
             "advisory_ids": advisory_ids_from(*ids),
         }
         self.fixed.append(entry)
-        self._register_advisory_ids(entry, ids)
+        if kind == "withdrawn":
+            self._register_withdrawn(entry, ids)
+        else:
+            self._register_fixed_install(entry, ids, lock=lock, package=package, installed=installed)
         return entry
 
     def _handle_dependency_advisory(
@@ -751,21 +832,26 @@ class Compiler:
         """Record withdrawn or already-fixed advisories as not-a-finding. True means do not add an open finding."""
         ids = advisory_ids_from(advisory_id, aliases or [])
         withdrawn = withdrawn_reason(record)
-        if withdrawn:
-            when = "" if withdrawn.lower() == "withdrawn" else f" at {withdrawn}"
-            reason = f"Advisory {advisory_id} withdrawn{when}; not a finding."
-            self._record_not_a_finding(ids=ids, package=package, evidence=evidence, reason=reason, source=source)
-            self._mark_dep_advisory_dedupe(lock, lock_dir, package, ids)
+        if withdrawn or self._existing_withdrawn(ids):
+            when = "" if not withdrawn or withdrawn.lower() == "withdrawn" else f" at {withdrawn}"
+            reason = (
+                f"Advisory {advisory_id} withdrawn{when}; not a finding."
+                if withdrawn else
+                (self._existing_withdrawn(ids) or {}).get("note") or f"Advisory {advisory_id} withdrawn; not a finding."
+            )
+            self._record_not_a_finding(
+                ids=ids, package=package, evidence=evidence, reason=reason,
+                source=source, kind="withdrawn", lock=lock, installed=installed,
+            )
             return True
         already = already_fixed_reason(record, package, installed)
         if already:
-            self._record_not_a_finding(ids=ids, package=package, evidence=evidence, reason=already, source=source)
-            self._mark_dep_advisory_dedupe(lock, lock_dir, package, ids)
+            self._record_not_a_finding(
+                ids=ids, package=package, evidence=evidence, reason=already,
+                source=source, kind="already_fixed", lock=lock, installed=installed,
+            )
             return True
-        existing = self._existing_disposition(ids)
-        if existing:
-            self._register_advisory_ids(existing, ids)
-            self._mark_dep_advisory_dedupe(lock, lock_dir, package, ids)
+        if self._existing_fixed_install(ids, lock=lock, package=package, installed=installed):
             return True
         return False
 
