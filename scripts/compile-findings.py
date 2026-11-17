@@ -231,57 +231,75 @@ RUNTIME_SCOPE = "runtime"
 DEVELOPMENT_SCOPE = "development"
 
 
+# Manifest/lockfile families. Classification never consults a file from another
+# ecosystem, and never walks out of the cited installation directory.
+_ECOSYSTEM_FILES = {
+    "npm": frozenset({"package-lock.json", "package.json", "yarn.lock", "pnpm-lock.yaml", "npm-shrinkwrap.json"}),
+    "composer": frozenset({"composer.lock", "composer.json"}),
+    "python": frozenset({"Pipfile.lock", "Pipfile", "poetry.lock", "pyproject.toml"}),
+    "cargo": frozenset({"Cargo.lock", "Cargo.toml"}),
+}
+_FILE_ECOSYSTEM = {name: eco for eco, names in _ECOSYSTEM_FILES.items() for name in names}
+
+
 def classify_dependency_scope(root: pathlib.Path, manifest: str | None, package: str | None,
                               hint: str | None = None) -> str:
     """Classify a package as runtime or development. Unknown defaults to runtime so it stays in the main score."""
+    return classify_dependency_scope_result(root, manifest, package, hint=hint)[0]
+
+
+def classify_dependency_scope_result(root: pathlib.Path, manifest: str | None, package: str | None,
+                                     hint: str | None = None) -> tuple[str, str]:
+    """Return (scope, source) where source is hint, lockfile, manifest, or default."""
     if hint in (RUNTIME_SCOPE, DEVELOPMENT_SCOPE):
-        return hint
-    if not package:
-        return RUNTIME_SCOPE
+        return hint, "hint"
+    if not package or not manifest:
+        return RUNTIME_SCOPE, "default"
     name = package.strip()
-    rel = manifest or ""
-    candidates: list[pathlib.Path] = []
-    if rel:
-        p = root / rel
-        if p.is_file():
-            candidates.append(p)
-        pkg_json = p.parent / "package.json" if p.parent else None
-        if pkg_json and pkg_json.is_file() and pkg_json not in candidates:
-            candidates.append(pkg_json)
-    # Walk parents for a manifest if the cite is a lockfile path
-    start = (root / rel).parent if rel else root
-    cur = start if start.is_dir() else root
-    try:
-        cur.relative_to(root)
-        in_root = True
-    except ValueError:
-        in_root = False
-    while in_root:
-        for fname in ("package-lock.json", "package.json", "composer.lock", "Pipfile.lock",
-                      "poetry.lock", "pnpm-lock.yaml", "yarn.lock", "Cargo.toml", "Gemfile"):
-            hit = cur / fname
-            if hit.is_file() and hit not in candidates:
-                candidates.append(hit)
-        if cur == root:
-            break
-        cur = cur.parent
+    cited = root / manifest
+    if not cited.is_file():
+        return RUNTIME_SCOPE, "default"
+    eco = _FILE_ECOSYSTEM.get(cited.name)
+    candidates = [cited]
+    if eco:
+        for fname in sorted(_ECOSYSTEM_FILES[eco]):
+            sibling = cited.parent / fname
+            if sibling.is_file() and sibling not in candidates:
+                candidates.append(sibling)
     for path in candidates:
-        scope = _scope_from_file(root, path, name)
+        scope, source = _scope_from_file(root, path, name)
         if scope:
-            return scope
-    return RUNTIME_SCOPE
+            return scope, source
+    return RUNTIME_SCOPE, "default"
 
 
-def _scope_from_file(root: pathlib.Path, path: pathlib.Path, name: str) -> str | None:
+def merge_dependency_scope(old_scope: str | None, old_source: str | None,
+                           new_scope: str | None, new_source: str | None) -> tuple[str, str]:
+    """Combine scope evidence. Positive runtime always wins; default runtime does not."""
+    def positive_runtime(scope: str | None, source: str | None) -> bool:
+        return scope == RUNTIME_SCOPE and source not in (None, "default")
+
+    if positive_runtime(old_scope, old_source):
+        return RUNTIME_SCOPE, old_source or "lockfile"
+    if positive_runtime(new_scope, new_source):
+        return RUNTIME_SCOPE, new_source or "lockfile"
+    if old_scope == DEVELOPMENT_SCOPE:
+        return DEVELOPMENT_SCOPE, old_source or "hint"
+    if new_scope == DEVELOPMENT_SCOPE:
+        return DEVELOPMENT_SCOPE, new_source or "hint"
+    return RUNTIME_SCOPE, old_source or new_source or "default"
+
+
+def _scope_from_file(root: pathlib.Path, path: pathlib.Path, name: str) -> tuple[str, str] | tuple[None, None]:
     try:
         rel = str(path.resolve().relative_to(root.resolve()))
     except (OSError, ValueError):
         rel = path.name
     text = safe_text(root, rel)
     if text is None:
-        return None
+        return None, None
     fname = path.name
-    if fname == "package-lock.json":
+    if fname in ("package-lock.json", "npm-shrinkwrap.json"):
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
@@ -289,25 +307,37 @@ def _scope_from_file(root: pathlib.Path, path: pathlib.Path, name: str) -> str |
         if isinstance(data, dict):
             flags = _npm_lock_dev_flags(data, name)
             if flags:
-                return DEVELOPMENT_SCOPE if all(flags) else RUNTIME_SCOPE
+                scope = DEVELOPMENT_SCOPE if all(flags) else RUNTIME_SCOPE
+                return scope, "lockfile"
+        return None, None
     if fname == "package.json":
-        return _package_json_scope(text, name)
+        scope = _package_json_scope(text, name)
+        return (scope, "manifest") if scope else (None, None)
     if fname == "composer.lock":
-        return _composer_lock_scope(text, name)
+        scope = _composer_lock_scope(text, name)
+        return (scope, "lockfile") if scope else (None, None)
     if fname == "Pipfile.lock":
-        return _pipfile_lock_scope(text, name)
+        scope = _pipfile_lock_scope(text, name)
+        return (scope, "lockfile") if scope else (None, None)
     if fname == "poetry.lock":
-        return _poetry_lock_scope(text, name)
+        scope = _poetry_lock_scope(text, name)
+        return (scope, "lockfile") if scope else (None, None)
     if fname in ("pnpm-lock.yaml", "yarn.lock"):
-        # No reliable transitivity without a YAML/graph parser; use sibling package.json first.
+        # No reliable transitivity without a YAML/graph parser; use sibling package.json only.
         sibling = path.parent / "package.json"
         if sibling.is_file():
-            scope = _package_json_scope(safe_text(root, str(sibling.relative_to(root))) or "", name)
+            try:
+                sib_rel = str(sibling.resolve().relative_to(root.resolve()))
+            except (OSError, ValueError):
+                sib_rel = str(sibling)
+            scope = _package_json_scope(safe_text(root, sib_rel) or "", name)
             if scope:
-                return scope
+                return scope, "manifest"
+        return None, None
     if fname == "Cargo.toml":
-        return _cargo_toml_scope(text, name)
-    return None
+        scope = _cargo_toml_scope(text, name)
+        return (scope, "manifest") if scope else (None, None)
+    return None, None
 
 
 def _npm_lock_dev_flags(data: dict, name: str) -> list[bool]:
@@ -385,23 +415,50 @@ def _pipfile_lock_scope(text: str, name: str) -> str | None:
     return None
 
 
+def _poetry_block_scope(block: str) -> str:
+    cat = re.search(r'(?m)^category\s*=\s*["\']([^"\']+)["\']', block)
+    if cat and cat.group(1).lower() in ("dev", "development", "test"):
+        return DEVELOPMENT_SCOPE
+    groups = re.search(r'(?m)^groups\s*=\s*\[([^\]]+)\]', block)
+    if groups:
+        names = [g.strip().strip("\"'") for g in groups.group(1).split(",")]
+        if any(n in {"main", "default"} for n in names):
+            return RUNTIME_SCOPE
+        if names and all(n in {"dev", "development", "test", "docs"} for n in names):
+            return DEVELOPMENT_SCOPE
+    return RUNTIME_SCOPE
+
+
 def _poetry_lock_scope(text: str, name: str) -> str | None:
+    scopes: list[str] = []
     for block in re.split(r"\n\[\[package\]\]\n", "\n" + text):
         m = re.search(r'(?m)^name\s*=\s*["\']([^"\']+)["\']', block)
         if not m or m.group(1) != name:
             continue
-        cat = re.search(r'(?m)^category\s*=\s*["\']([^"\']+)["\']', block)
-        if cat and cat.group(1).lower() in ("dev", "development", "test"):
-            return DEVELOPMENT_SCOPE
-        groups = re.search(r'(?m)^groups\s*=\s*\[([^\]]+)\]', block)
-        if groups:
-            names = [g.strip().strip("\"'") for g in groups.group(1).split(",")]
-            if any(n in {"main", "default"} for n in names):
-                return RUNTIME_SCOPE
-            if names and all(n in {"dev", "development", "test", "docs"} for n in names):
-                return DEVELOPMENT_SCOPE
+        scopes.append(_poetry_block_scope(block))
+    if not scopes:
+        return None
+    if any(scope == RUNTIME_SCOPE for scope in scopes):
         return RUNTIME_SCOPE
-    return None
+    if all(scope == DEVELOPMENT_SCOPE for scope in scopes):
+        return DEVELOPMENT_SCOPE
+    return RUNTIME_SCOPE
+
+
+def _cargo_section_kind(section: str) -> tuple[str | None, str | None]:
+    """Return (kind, table_package) for a Cargo.toml table name.
+
+    kind is 'runtime' or 'dev'. table_package is set for [dependencies.foo] forms.
+    dev-dependencies is checked before dependencies because the latter is a suffix.
+    """
+    s = section.strip()
+    m = re.search(r'(?:^|\.)dev-dependencies(?:\.(?P<pkg>.+))?$', s)
+    if m:
+        return "dev", m.group("pkg")
+    m = re.search(r'(?:^|\.)dependencies(?:\.(?P<pkg>.+))?$', s)
+    if m:
+        return "runtime", m.group("pkg")
+    return None, None
 
 
 def _cargo_toml_scope(text: str, name: str) -> str | None:
@@ -412,16 +469,22 @@ def _cargo_toml_scope(text: str, name: str) -> str | None:
         line = raw.split("#", 1)[0].strip()
         if line.startswith("[") and line.endswith("]"):
             section = line.strip("[]").strip()
+            kind, table_pkg = _cargo_section_kind(section)
+            if table_pkg == name:
+                if kind == "runtime":
+                    runtime = True
+                elif kind == "dev":
+                    dev = True
+            continue
+        kind, table_pkg = _cargo_section_kind(section)
+        if kind is None or table_pkg:
             continue
         m = re.match(r'["\']?([^"\'=\s]+)["\']?\s*=', line)
-        if not m:
+        if not m or m.group(1) != name:
             continue
-        pkg = m.group(1)
-        if pkg != name:
-            continue
-        if section in {"dependencies", "workspace.dependencies"}:
+        if kind == "runtime":
             runtime = True
-        elif section in {"dev-dependencies", "workspace.dev-dependencies"}:
+        elif kind == "dev":
             dev = True
     if runtime:
         return RUNTIME_SCOPE
@@ -622,6 +685,7 @@ class Compiler:
         self.tool_meta: dict[str, dict] = {}
         self.domain_counters: dict[str, int] = defaultdict(int)
         self._dedupe: set[str] = set()
+        self._scope_source: dict[str, str] = {}
         self.trivyignore: set[str] = load_trivyignore(root)
         self.notes = (evidence / "NOTES.txt").read_text(errors="replace") if (evidence / "NOTES.txt").is_file() else ""
         self.source_ok: dict[str, bool | None] = {
@@ -672,9 +736,11 @@ class Compiler:
             entry["package"] = package
         if domain == "dependencies" or DOMAIN_PREFIX.get(domain) == "DEPS":
             ev0 = evidence[0] if evidence and isinstance(evidence[0], dict) else {}
-            entry["dependency_scope"] = classify_dependency_scope(
+            scope, source = classify_dependency_scope_result(
                 self.root, ev0.get("file"), package, hint=dependency_scope,
             )
+            entry["dependency_scope"] = scope
+            self._scope_source[fid] = source
         if cwes:
             entry["cwe"] = [f"CWE-{c}" for c in cwes]
             cats = owasp_for_cwes(cwes)
@@ -682,6 +748,30 @@ class Compiler:
                 entry["owasp"] = cats
         self.findings.append(entry)
         return fid
+
+    def _merge_scope_into_existing(self, package: str, advisory_ids: list[str], hint: str | None) -> None:
+        """Apply later scope evidence (e.g. Dependabot) to a finding already kept by dedupe."""
+        if hint not in (RUNTIME_SCOPE, DEVELOPMENT_SCOPE) or not package:
+            return
+        needles = {a.upper() for a in advisory_ids if a}
+        for finding in self.findings:
+            if finding.get("package") != package:
+                continue
+            if finding.get("domain") not in ("DEPS", "dependencies"):
+                continue
+            blob = " ".join(
+                str(finding.get(k) or "") for k in ("id", "title", "impact", "recommendation")
+            ).upper()
+            if needles and not any(n in blob for n in needles):
+                continue
+            fid = finding.get("id") or ""
+            scope, source = merge_dependency_scope(
+                finding.get("dependency_scope"), self._scope_source.get(fid),
+                hint, "hint",
+            )
+            finding["dependency_scope"] = scope
+            if fid:
+                self._scope_source[fid] = source
 
     def _mark_source(self, name: str, ok: bool, version: str | None = None, count: int = 0, detail: str = ""):
         self.source_ok[name] = ok
@@ -1084,8 +1174,12 @@ class Compiler:
             if not lock:
                 return
             lock_dir = str(pathlib.PurePosixPath(lock).parent)
+            scope_hint = str(dep.get("scope") or "").strip().lower()
+            if scope_hint not in (RUNTIME_SCOPE, DEVELOPMENT_SCOPE):
+                scope_hint = None
             if (f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{ghsa.upper()}" in self._dedupe
                     or (cve_id and f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{cve_id.upper()}" in self._dedupe)):
+                self._merge_scope_into_existing(pkg, [ghsa, cve_id], scope_hint)
                 return
             line = self._line_for_package(lock, pkg)
             ev = cite(self.root, lock, line, pkg)
@@ -1096,7 +1190,6 @@ class Compiler:
             if cve_id:
                 self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{cve_id.upper()}")
                 self._dedupe.add(f"dep_dir_adv|{lock_dir}|{cve_id.upper()}")
-            scope_hint = str(dep.get("scope") or "").strip().lower()
             self._add_finding(
                 domain="dependencies", severity=sev, title=f"{pkg}: {summary}",
                 evidence=[ev], impact=str(adv.get("description") or summary)[:400],

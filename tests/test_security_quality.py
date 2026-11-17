@@ -2014,6 +2014,106 @@ class RuntimeDevDependencySplitTests(unittest.TestCase):
             self.assertEqual("development", by_pkg["eslint"]["dependency_scope"])
             self.assertEqual("runtime", by_pkg["left-pad"]["dependency_scope"])
 
+    def test_does_not_use_other_ecosystem_or_parent_manifests(self):
+        cf, _, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "package.json").write_text(json.dumps({"devDependencies": {"debug": "4.0.0"}}))
+            (root / "poetry.lock").write_text('[[package]]\nname = "debug"\ncategory = "main"\n')
+            # Poetry cite must not inherit npm devDependencies for the same name
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "poetry.lock", "debug"))
+            service = root / "service"
+            service.mkdir()
+            (service / "yarn.lock").write_text('# yarn lockfile v1\n')
+            # A service yarn lock must not inherit the root package.json dev entry
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "service/yarn.lock", "debug"))
+
+    def test_poetry_runtime_block_wins_over_earlier_dev_block(self):
+        cf, _, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "poetry.lock").write_text(
+                '[[package]]\nname = "foo"\ncategory = "dev"\n\n'
+                '[[package]]\nname = "foo"\ngroups = ["main"]\n'
+            )
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "poetry.lock", "foo"))
+
+    def test_cargo_target_runtime_overrides_dev_declaration(self):
+        cf, _, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "Cargo.toml").write_text(
+                "[dev-dependencies]\n"
+                "openssl = \"0.10\"\n"
+                "[target.'cfg(unix)'.dependencies]\n"
+                "openssl = \"0.10\"\n"
+                "[dependencies.serde]\n"
+                "version = \"1\"\n"
+            )
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "Cargo.toml", "openssl"))
+            self.assertEqual("runtime", cf.classify_dependency_scope(root, "Cargo.toml", "serde"))
+
+    def test_dependabot_scope_merges_into_existing_finding(self):
+        cf, _, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "repo"
+            ev = pathlib.Path(tmp) / "evidence"
+            root.mkdir(); ev.mkdir()
+            (root / "README.md").write_text("# demo\n")
+            (root / "yarn.lock").write_text("# yarn lockfile v1\n")
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [{
+                    "source": {"path": "yarn.lock"},
+                    "packages": [{
+                        "package": {"name": "eslint", "version": "8.0.0"},
+                        "vulnerabilities": [{"id": "GHSA-dev-hint", "summary": "eslint", "database_specific": {"severity": "HIGH"}}],
+                    }],
+                }]
+            }))
+            (ev / "dependabot.json").write_text(json.dumps([{
+                "dependency": {
+                    "package": {"name": "eslint"},
+                    "manifest_path": "yarn.lock",
+                    "scope": "development",
+                },
+                "security_advisory": {"ghsa_id": "GHSA-dev-hint", "severity": "high", "summary": "eslint"},
+            }]))
+            data = cf.Compiler("bcgov/myapp", root, ev).run()
+            deps = [f for f in data["findings"] if f.get("package") == "eslint"]
+            self.assertEqual(1, len(deps), deps)
+            self.assertEqual("development", deps[0]["dependency_scope"])
+
+            # Positive runtime lockfile evidence still wins over a later development hint
+            root2 = pathlib.Path(tmp) / "repo2"
+            ev2 = pathlib.Path(tmp) / "evidence2"
+            root2.mkdir(); ev2.mkdir()
+            (root2 / "README.md").write_text("# demo\n")
+            (root2 / "package-lock.json").write_text(json.dumps({
+                "packages": {"node_modules/express": {"version": "4.18.2"}}
+            }))
+            (ev2 / "osv-scanner.json").write_text(json.dumps({
+                "results": [{
+                    "source": {"path": "package-lock.json"},
+                    "packages": [{
+                        "package": {"name": "express", "version": "4.18.2"},
+                        "vulnerabilities": [{"id": "GHSA-runtime", "summary": "express", "database_specific": {"severity": "HIGH"}}],
+                    }],
+                }]
+            }))
+            (ev2 / "dependabot.json").write_text(json.dumps([{
+                "dependency": {
+                    "package": {"name": "express"},
+                    "manifest_path": "package-lock.json",
+                    "scope": "development",
+                },
+                "security_advisory": {"ghsa_id": "GHSA-runtime", "severity": "high", "summary": "express"},
+            }]))
+            data2 = cf.Compiler("bcgov/myapp", root2, ev2).run()
+            deps2 = [f for f in data2["findings"] if f.get("package") == "express"]
+            self.assertEqual(1, len(deps2), deps2)
+            self.assertEqual("runtime", deps2[0]["dependency_scope"])
+
+
 
 
 if __name__ == "__main__":
