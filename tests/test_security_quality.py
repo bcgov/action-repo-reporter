@@ -1812,5 +1812,441 @@ class NoiseFiltersAndScoringTests(unittest.TestCase):
             self.assertEqual(7, len(comp.findings), by_source)
 
 
+class WithdrawnFixedAdvisoryTests(unittest.TestCase):
+    def load(self):
+        spec_cf = importlib.util.spec_from_file_location("cf_withdrawn", ROOT / "scripts/compile-findings.py")
+        cf = importlib.util.module_from_spec(spec_cf)
+        spec_cf.loader.exec_module(cf)
+        spec_sc = importlib.util.spec_from_file_location("sc_withdrawn", ROOT / "scripts/score.py")
+        sc = importlib.util.module_from_spec(spec_sc)
+        spec_sc.loader.exec_module(sc)
+        return cf, sc
+
+    def _lockfile_repo(self, tmp, lock_name="package-lock.json", body=None):
+        root = pathlib.Path(tmp) / "repo"
+        ev = pathlib.Path(tmp) / "evidence"
+        root.mkdir()
+        ev.mkdir()
+        (root / "README.md").write_text("# demo\n")
+        (root / lock_name).write_text(body or '{\n  "packages": {\n    "node_modules/deepmerge": { "version": "4.3.1" }\n  }\n}\n')
+        return root, ev
+
+    def test_osv_withdrawn_advisory_is_not_an_open_finding(self):
+        cf, sc = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._lockfile_repo(tmp)
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [{
+                    "source": {"path": "package-lock.json"},
+                    "packages": [{
+                        "package": {"name": "deepmerge", "version": "4.3.1"},
+                        "vulnerabilities": [{
+                            "id": "GHSA-gcqx-w48m-w2h4",
+                            "aliases": ["CVE-2026-93753"],
+                            "summary": "Withdrawn Advisory: deepmerge mergeObject() allows prototype poisoning of returned objects",
+                            "withdrawn": "2026-11-16T18:55:38Z",
+                            "database_specific": {"severity": "LOW"},
+                        }],
+                    }],
+                }]
+            }))
+            data = cf.Compiler("bcgov/nr-fom", root, ev).run()
+            self.assertEqual([], [f["title"] for f in data["findings"] if "deepmerge" in f.get("title", "") or "GHSA-gcqx-w48m-w2h4" in f.get("title", "")])
+            fixed = [e for e in data["fixed"] if "GHSA-gcqx-w48m-w2h4" in (e.get("note") or "")]
+            self.assertEqual(1, len(fixed), data["fixed"])
+            self.assertEqual("not_a_finding", fixed[0]["disposition"])
+            self.assertIn("withdrawn at 2026-11-16T18:55:38Z", fixed[0]["note"])
+            self.assertEqual("package-lock.json", fixed[0]["file"])
+            self.assertTrue(fixed[0]["line"] >= 1)
+            deps = next(c for c in data["chapters"] if c["id"] == "dependencies")
+            self.assertIn(fixed[0]["id"], deps["finding_ids"])
+            self.assertIn("not-a-finding", deps["note"])
+
+            findings_path = pathlib.Path(tmp) / "findings.json"
+            findings_path.write_text(json.dumps(data))
+            out = pathlib.Path(tmp) / "score.json"
+            argv = ["score.py", str(findings_path), "--repo-dir", str(root), "--out", str(out)]
+            old = sys.argv
+            try:
+                sys.argv = argv
+                with self.assertRaises(SystemExit) as cm:
+                    sc.main()
+                self.assertEqual(0, cm.exception.code)
+            finally:
+                sys.argv = old
+            score = json.loads(out.read_text())
+            self.assertEqual(0, score["score"])
+            self.assertEqual([], score["rejected"])
+            self.assertEqual([fixed[0]["id"]], score["fixed_accepted"])
+
+    def test_withdrawn_text_without_timestamp_still_classifies(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._lockfile_repo(tmp)
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [{
+                    "source": {"path": "package-lock.json"},
+                    "packages": [{
+                        "package": {"name": "deepmerge", "version": "4.3.1"},
+                        "vulnerabilities": [{
+                            "id": "GHSA-gcqx-w48m-w2h4",
+                            "summary": "Withdrawn Advisory: deepmerge prototype poisoning",
+                            "database_specific": {"severity": "LOW"},
+                        }],
+                    }],
+                }]
+            }))
+            c = cf.Compiler("bcgov/myapp", root, ev)
+            c.ingest_osv()
+            self.assertEqual([], c.findings)
+            self.assertEqual(1, len(c.fixed))
+            self.assertIn("withdrawn", c.fixed[0]["note"])
+
+    def test_dependabot_withdrawn_reclassifies_existing_osv_finding(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._lockfile_repo(tmp)
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [{
+                    "source": {"path": "package-lock.json"},
+                    "packages": [{
+                        "package": {"name": "deepmerge", "version": "4.3.1"},
+                        "vulnerabilities": [{
+                            "id": "GHSA-gcqx-w48m-w2h4",
+                            "aliases": ["CVE-2026-93753"],
+                            "summary": "deepmerge prototype poisoning",
+                            "database_specific": {"severity": "LOW"},
+                        }],
+                    }],
+                }]
+            }))
+            (ev / "dependabot.json").write_text(json.dumps([{
+                "state": "open",
+                "dependency": {"package": {"name": "deepmerge"}, "manifest_path": "package-lock.json"},
+                "security_advisory": {
+                    "ghsa_id": "GHSA-gcqx-w48m-w2h4",
+                    "cve_id": "CVE-2026-93753",
+                    "summary": "Withdrawn Advisory: deepmerge",
+                    "withdrawn_at": "2026-11-16T18:55:38Z",
+                    "severity": "low",
+                },
+            }]))
+            c = cf.Compiler("bcgov/nr-fom", root, ev)
+            c.ingest_osv()
+            self.assertEqual(1, len(c.findings))
+            open_id = c.findings[0]["id"]
+            c.ingest_github_alerts()
+            self.assertEqual([], c.findings)
+            self.assertEqual(1, len(c.fixed))
+            self.assertEqual(open_id, c.fixed[0]["id"])
+            self.assertIn("withdrawn at 2026-11-16T18:55:38Z", c.fixed[0]["note"])
+
+    def test_trivy_cve_alias_of_withdrawn_ghsa_is_not_readded(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._lockfile_repo(tmp)
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [{
+                    "source": {"path": "package-lock.json"},
+                    "packages": [{
+                        "package": {"name": "deepmerge", "version": "4.3.1"},
+                        "vulnerabilities": [{
+                            "id": "GHSA-gcqx-w48m-w2h4",
+                            "aliases": ["CVE-2026-93753"],
+                            "summary": "Withdrawn Advisory: deepmerge",
+                            "withdrawn": "2026-11-16T18:55:38Z",
+                        }],
+                    }],
+                }]
+            }))
+            (ev / "trivy.json").write_text(json.dumps({
+                "Trivy": {"Version": "0.76.1"},
+                "Results": [{
+                    "Target": "package-lock.json",
+                    "Vulnerabilities": [{
+                        "VulnerabilityID": "CVE-2026-93753",
+                        "PkgName": "deepmerge",
+                        "InstalledVersion": "4.3.1",
+                        "Severity": "LOW",
+                        "Title": "deepmerge prototype poisoning",
+                    }],
+                }],
+            }))
+            c = cf.Compiler("bcgov/myapp", root, ev)
+            c.ingest_osv()
+            c.ingest_trivy()
+            self.assertEqual([], c.findings)
+            self.assertEqual(1, len(c.fixed))
+
+    def test_already_patched_version_is_not_an_open_finding(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._lockfile_repo(tmp, body='{\n  "packages": {\n    "node_modules/left-pad": { "version": "1.3.0" }\n  }\n}\n')
+            (ev / "trivy.json").write_text(json.dumps({
+                "Results": [{
+                    "Target": "package-lock.json",
+                    "Vulnerabilities": [{
+                        "VulnerabilityID": "CVE-2020-1",
+                        "PkgName": "left-pad",
+                        "InstalledVersion": "1.3.0",
+                        "FixedVersion": "1.3.0",
+                        "Severity": "HIGH",
+                        "Title": "left-pad",
+                    }],
+                }],
+            }))
+            c = cf.Compiler("bcgov/myapp", root, ev)
+            c.ingest_trivy()
+            self.assertEqual([], c.findings)
+            self.assertEqual(1, len(c.fixed))
+            self.assertIn("already at or past patched version 1.3.0", c.fixed[0]["note"])
+
+    def test_unpatched_and_ambiguous_versions_stay_open(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._lockfile_repo(tmp, body='{\n  "packages": {\n    "node_modules/left-pad": { "version": "1.2.0" }\n  }\n}\n')
+            (ev / "trivy.json").write_text(json.dumps({
+                "Results": [{
+                    "Target": "package-lock.json",
+                    "Vulnerabilities": [
+                        {
+                            "VulnerabilityID": "CVE-2020-1",
+                            "PkgName": "left-pad",
+                            "InstalledVersion": "1.2.0",
+                            "FixedVersion": "1.3.0",
+                            "Severity": "HIGH",
+                            "Title": "still vulnerable",
+                        },
+                        {
+                            "VulnerabilityID": "CVE-2020-2",
+                            "PkgName": "left-pad",
+                            "InstalledVersion": "1.2.0",
+                            "FixedVersion": "1.3.0, 2.0.1",
+                            "Severity": "HIGH",
+                            "Title": "ambiguous patch list",
+                        },
+                        {
+                            "VulnerabilityID": "CVE-2020-3",
+                            "PkgName": "left-pad",
+                            "InstalledVersion": "1.2.0",
+                            "FixedVersion": "1.3.0",
+                            "Status": "fixed",
+                            "Severity": "HIGH",
+                            "Title": "status fixed means a patch exists",
+                        },
+                    ],
+                }],
+            }))
+            c = cf.Compiler("bcgov/myapp", root, ev)
+            c.ingest_trivy()
+            vids = " ".join(f["title"] for f in c.findings)
+            self.assertEqual(3, len(c.findings), vids)
+            self.assertEqual([], c.fixed)
+
+    def test_github_alert_state_fixed_is_not_an_open_finding(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._lockfile_repo(tmp)
+            (ev / "dependabot.json").write_text(json.dumps([{
+                "state": "fixed",
+                "dependency": {"package": {"name": "deepmerge"}, "manifest_path": "package-lock.json", "version": "4.3.1"},
+                "security_advisory": {"ghsa_id": "GHSA-fixed-0000-0000", "severity": "high", "summary": "already remediated"},
+            }]))
+            c = cf.Compiler("bcgov/myapp", root, ev)
+            c.ingest_github_alerts()
+            self.assertEqual([], c.findings)
+            self.assertEqual(1, len(c.fixed))
+            self.assertIn("already fixed", c.fixed[0]["note"])
+
+    def test_osv_affected_range_already_past_patch_is_not_open(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._lockfile_repo(tmp, body='{\n  "packages": {\n    "node_modules/foo": { "version": "2.1.0" }\n  }\n}\n')
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [{
+                    "source": {"path": "package-lock.json"},
+                    "packages": [{
+                        "package": {"name": "foo", "version": "2.1.0"},
+                        "vulnerabilities": [{
+                            "id": "GHSA-already-fixed",
+                            "summary": "foo issue",
+                            "affected": [{
+                                "package": {"name": "foo", "ecosystem": "npm"},
+                                "ranges": [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "2.0.0"}]}],
+                            }],
+                        }],
+                    }],
+                }]
+            }))
+            c = cf.Compiler("bcgov/myapp", root, ev)
+            c.ingest_osv()
+            self.assertEqual([], c.findings)
+            self.assertEqual(1, len(c.fixed))
+            self.assertIn("already past the patched version", c.fixed[0]["note"])
+
+
+    def test_osv_reintroduced_range_stays_open(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._lockfile_repo(tmp, body='{\n  "packages": {\n    "node_modules/foo": { "version": "2.1.0" }\n  }\n}\n')
+            vuln = {
+                "id": "GHSA-reintro-0000",
+                "summary": "foo reintroduced",
+                "affected": [{
+                    "package": {"name": "foo", "ecosystem": "npm"},
+                    "ranges": [{"type": "SEMVER", "events": [
+                        {"introduced": "0"}, {"fixed": "1.5.0"}, {"introduced": "2.0.0"},
+                    ]}],
+                }],
+            }
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [{"source": {"path": "package-lock.json"}, "packages": [
+                    {"package": {"name": "foo", "version": "2.1.0"}, "vulnerabilities": [vuln]}
+                ]}]
+            }))
+            c = cf.Compiler("bcgov/myapp", root, ev)
+            c.ingest_osv()
+            self.assertEqual(1, len(c.findings), c.fixed)
+            self.assertEqual([], c.fixed)
+
+    def test_substring_advisory_id_does_not_reclassify_another_cve(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "repo"
+            ev = pathlib.Path(tmp) / "evidence"
+            root.mkdir(); ev.mkdir()
+            (root / "package-lock.json").write_text(
+                '{\n  "packages": {\n    "node_modules/pkg": { "version": "1.0.0" }\n  }\n}\n'
+            )
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [{"source": {"path": "package-lock.json"}, "packages": [{
+                    "package": {"name": "pkg", "version": "1.0.0"},
+                    "vulnerabilities": [
+                        {"id": "CVE-2025-1000", "summary": "short id", "withdrawn": "2026-01-01T00:00:00Z"},
+                        {"id": "CVE-2025-10000", "summary": "longer sibling id"},
+                    ],
+                }]}]
+            }))
+            c = cf.Compiler("bcgov/myapp", root, ev)
+            c.ingest_osv()
+            open_ids = [a for f in c.findings for a in (f.get("advisory_ids") or [])]
+            self.assertEqual(["CVE-2025-10000"], open_ids)
+            notes = " ".join(e.get("note") or "" for e in c.fixed)
+            self.assertIn("CVE-2025-1000", notes)
+            self.assertNotIn("CVE-2025-10000 withdrawn", notes)
+
+    def test_already_fixed_in_one_lockfile_does_not_hide_another_install(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "repo"
+            ev = pathlib.Path(tmp) / "evidence"
+            (root / "api").mkdir(parents=True)
+            (root / "web").mkdir(parents=True)
+            ev.mkdir()
+            (root / "api/package-lock.json").write_text(
+                '{\n  "packages": {\n    "node_modules/foo": { "version": "2.0.0" }\n  }\n}\n'
+            )
+            (root / "web/package-lock.json").write_text(
+                '{\n  "packages": {\n    "node_modules/foo": { "version": "1.0.0" }\n  }\n}\n'
+            )
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [
+                    {"source": {"path": "api/package-lock.json"}, "packages": [{
+                        "package": {"name": "foo", "version": "2.0.0"},
+                        "vulnerabilities": [{
+                            "id": "GHSA-scope-0000",
+                            "summary": "foo issue",
+                            "affected": [{
+                                "package": {"name": "foo"},
+                                "ranges": [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "2.0.0"}]}],
+                            }],
+                        }],
+                    }]},
+                    {"source": {"path": "web/package-lock.json"}, "packages": [{
+                        "package": {"name": "foo", "version": "1.0.0"},
+                        "vulnerabilities": [{
+                            "id": "GHSA-scope-0000",
+                            "summary": "foo issue",
+                            "affected": [{
+                                "package": {"name": "foo"},
+                                "ranges": [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "2.0.0"}]}],
+                            }],
+                        }],
+                    }]},
+                ]
+            }))
+            c = cf.Compiler("bcgov/myapp", root, ev)
+            c.ingest_osv()
+            self.assertEqual(1, len(c.fixed), c.fixed)
+            self.assertEqual("api/package-lock.json", c.fixed[0]["file"])
+            self.assertEqual(1, len(c.findings), c.findings)
+            self.assertEqual("web/package-lock.json", c.findings[0]["evidence"][0]["file"])
+
+    def test_trivy_description_field_detects_withdrawal(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root, ev = self._lockfile_repo(tmp)
+            (ev / "trivy.json").write_text(json.dumps({
+                "Results": [{"Target": "package-lock.json", "Vulnerabilities": [{
+                    "VulnerabilityID": "CVE-2026-93753",
+                    "PkgName": "deepmerge",
+                    "InstalledVersion": "4.3.1",
+                    "Severity": "LOW",
+                    "Title": "deepmerge prototype poisoning",
+                    "Description": "This advisory has been withdrawn. It does not describe a security vulnerability.",
+                }]}],
+            }))
+            c = cf.Compiler("bcgov/myapp", root, ev)
+            c.ingest_trivy()
+            self.assertEqual([], c.findings)
+            self.assertEqual(1, len(c.fixed))
+            self.assertIn("withdrawn", c.fixed[0]["note"])
+
+    def test_withdrawal_reclassifies_every_matching_lockfile(self):
+        cf, _ = self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp) / "repo"
+            ev = pathlib.Path(tmp) / "evidence"
+            (root / "api").mkdir(parents=True)
+            (root / "web").mkdir(parents=True)
+            ev.mkdir()
+            (root / "api/package-lock.json").write_text(
+                '{\n  "packages": {\n    "node_modules/deepmerge": { "version": "4.3.1" }\n  }\n}\n'
+            )
+            (root / "web/package-lock.json").write_text(
+                '{\n  "packages": {\n    "node_modules/deepmerge": { "version": "4.3.1" }\n  }\n}\n'
+            )
+            (ev / "osv-scanner.json").write_text(json.dumps({
+                "results": [
+                    {"source": {"path": "api/package-lock.json"}, "packages": [{
+                        "package": {"name": "deepmerge", "version": "4.3.1"},
+                        "vulnerabilities": [{"id": "GHSA-gcqx-w48m-w2h4", "summary": "deepmerge"}],
+                    }]},
+                    {"source": {"path": "web/package-lock.json"}, "packages": [{
+                        "package": {"name": "deepmerge", "version": "4.3.1"},
+                        "vulnerabilities": [{"id": "GHSA-gcqx-w48m-w2h4", "summary": "deepmerge"}],
+                    }]},
+                ]
+            }))
+            (ev / "dependabot.json").write_text(json.dumps([{
+                "state": "open",
+                "dependency": {"package": {"name": "deepmerge"}, "manifest_path": "api/package-lock.json"},
+                "security_advisory": {
+                    "ghsa_id": "GHSA-gcqx-w48m-w2h4",
+                    "summary": "Withdrawn Advisory: deepmerge",
+                    "withdrawn_at": "2026-11-16T18:55:38Z",
+                    "severity": "low",
+                },
+            }]))
+            c = cf.Compiler("bcgov/myapp", root, ev)
+            c.ingest_osv()
+            self.assertEqual(2, len(c.findings))
+            c.ingest_github_alerts()
+            self.assertEqual([], c.findings)
+            self.assertEqual(2, len(c.fixed))
+            self.assertEqual({"api/package-lock.json", "web/package-lock.json"}, {e["file"] for e in c.fixed})
+
+
+
 if __name__ == "__main__":
     unittest.main()

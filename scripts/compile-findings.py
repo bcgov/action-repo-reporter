@@ -406,6 +406,213 @@ def load_trivyignore(root: pathlib.Path) -> set[str]:
     return ignored
 
 
+
+def advisory_ids_from(*values: Any) -> list[str]:
+    """Collect unique advisory IDs (GHSA, CVE, OSV) preserving order."""
+    ids: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        items = value if isinstance(value, (list, tuple, set)) else [value]
+        for item in items:
+            if isinstance(item, dict):
+                item = item.get("value") or item.get("Value") or item.get("id") or item.get("identifier") or ""
+            s = str(item or "").strip()
+            key = s.upper()
+            if s and key not in seen:
+                seen.add(key)
+                ids.append(s)
+    return ids
+
+
+def withdrawn_reason(record: dict) -> str | None:
+    """Return a withdrawn timestamp (or 'withdrawn') when the advisory was retracted."""
+    if not isinstance(record, dict):
+        return None
+    nested: list[dict] = [record]
+    for key in ("security_advisory", "database_specific"):
+        val = record.get(key)
+        if isinstance(val, dict):
+            nested.append(val)
+    for obj in nested:
+        for key in ("withdrawn", "withdrawn_at"):
+            val = obj.get(key)
+            if isinstance(val, str) and val.strip() and val.strip().lower() not in ("false", "0", "none"):
+                return val.strip()
+    texts: list[Any] = []
+    for obj in nested:
+        texts.extend([obj.get("summary"), obj.get("details"), obj.get("description"),
+                      obj.get("Description"), obj.get("Title"), obj.get("title")])
+    for text in texts:
+        raw = str(text or "")
+        if re.search(r"(?i)(?:^|\n)\s*withdrawn advisory\b", raw) or re.search(
+            r"(?i)this advisory has been withdrawn\b", raw
+        ):
+            return "withdrawn"
+    return None
+
+
+def _simple_version(value: str | None) -> tuple[int, ...] | None:
+    s = str(value or "").strip()
+    if s.startswith(("v", "V")) and len(s) > 1 and s[1].isdigit():
+        s = s[1:]
+    if not re.fullmatch(r"\d+(?:\.\d+)*", s):
+        return None
+    return tuple(int(part) for part in s.split("."))
+
+
+def _version_cmp(left: tuple[int, ...], right: tuple[int, ...]) -> int:
+    n = max(len(left), len(right))
+    a = left + (0,) * (n - len(left))
+    b = right + (0,) * (n - len(right))
+    return (a > b) - (a < b)
+
+
+def _single_patched_version(value: Any) -> str | None:
+    if isinstance(value, dict):
+        value = value.get("identifier") or value.get("version") or value.get("name")
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text or "," in text or " " in text:
+        return None
+    return text if _simple_version(text) else None
+
+
+def already_fixed_reason(record: dict, package: str | None, installed: str | None) -> str | None:
+    """Return a reason when evidence shows the install is already patched or the alert is fixed.
+
+    Conservative: uncertain version comparisons stay open findings. Trivy Status 'fixed'
+    means a patch exists, not that this install is patched, so it is not used here.
+    """
+    if not isinstance(record, dict):
+        return None
+    state = str(record.get("state") or "").strip().lower()
+    if state == "fixed":
+        adv = record.get("security_advisory") if isinstance(record.get("security_advisory"), dict) else {}
+        label = str(adv.get("ghsa_id") or record.get("id") or "advisory")
+        return f"GitHub alert for {label} is already fixed; not an open finding."
+    status = str(record.get("Status") or record.get("status") or "").strip().lower()
+    if status in ("not_affected", "not-affected"):
+        vid = str(record.get("VulnerabilityID") or record.get("id") or "advisory")
+        pkg = f"{package or 'package'} {installed or ''}".strip()
+        return f"{pkg} is not affected by {vid}; not an open finding."
+    patched = None
+    for raw in (
+        record.get("FixedVersion"),
+        record.get("first_patched_version"),
+        (record.get("security_vulnerability") or {}).get("first_patched_version")
+        if isinstance(record.get("security_vulnerability"), dict) else None,
+    ):
+        patched = _single_patched_version(raw)
+        if patched:
+            break
+    inst = _simple_version(installed)
+    if patched and inst is not None:
+        pv = _simple_version(patched)
+        if pv is not None and _version_cmp(inst, pv) >= 0:
+            adv = record.get("security_advisory") if isinstance(record.get("security_advisory"), dict) else {}
+            vid = str(
+                record.get("VulnerabilityID") or record.get("id") or record.get("ghsa_id")
+                or adv.get("ghsa_id") or "advisory"
+            )
+            return (
+                f"{package or 'package'} {installed} is already at or past patched version "
+                f"{patched} for {vid}; not an open finding."
+            )
+    return _osv_already_fixed_reason(record, package, installed)
+
+
+def _osv_range_intervals(rng: dict) -> list[tuple[str, str | None, bool]] | None:
+    """Split an OSV range's events into (introduced, end, end_inclusive) intervals.
+
+    A later `introduced` starts a new interval (reintroduction). Unparseable
+    event sequences return None so the caller leaves the finding open.
+    """
+    intervals: list[tuple[str, str | None, bool]] = []
+    introduced: str | None = None
+    for ev in rng.get("events") or []:
+        if not isinstance(ev, dict):
+            return None
+        if "introduced" in ev:
+            if introduced is not None:
+                return None
+            introduced = ev.get("introduced") or "0"
+        if "fixed" in ev or "last_affected" in ev:
+            if introduced is None:
+                introduced = "0"
+            if "fixed" in ev:
+                intervals.append((introduced, ev.get("fixed"), False))
+            else:
+                intervals.append((introduced, ev.get("last_affected"), True))
+            introduced = None
+    if introduced is not None:
+        intervals.append((introduced, None, False))
+    return intervals
+
+
+def _version_in_interval(installed: tuple[int, ...], introduced: str, end: str | None,
+                         end_inclusive: bool) -> bool | None:
+    intro_v = (0,) if str(introduced) in ("0", "0.0.0") else _simple_version(str(introduced))
+    if intro_v is None:
+        return None
+    if _version_cmp(installed, intro_v) < 0:
+        return False
+    if end is None:
+        return True
+    end_v = _simple_version(str(end))
+    if end_v is None:
+        return None
+    if end_inclusive:
+        return _version_cmp(installed, end_v) <= 0
+    return _version_cmp(installed, end_v) < 0
+
+
+def _osv_already_fixed_reason(record: dict, package: str | None, installed: str | None) -> str | None:
+    inst = _simple_version(installed)
+    affected = record.get("affected")
+    if inst is None or not isinstance(affected, list) or not affected:
+        return None
+    matching = [
+        a for a in affected
+        if isinstance(a, dict) and (
+            not package or str((a.get("package") or {}).get("name") or "") in ("", package)
+        )
+    ]
+    named = [a for a in matching if package and str((a.get("package") or {}).get("name") or "") == package]
+    matching = named or matching
+    if not matching:
+        return None
+    saw_interval = False
+    for entry in matching:
+        versions = {str(v) for v in (entry.get("versions") or [])}
+        if installed is not None and str(installed) in versions:
+            return None
+        ranges = entry.get("ranges") or []
+        if not ranges:
+            return None
+        for rng in ranges:
+            if not isinstance(rng, dict):
+                return None
+            intervals = _osv_range_intervals(rng)
+            if intervals is None:
+                return None
+            for intro, end, inclusive in intervals:
+                inside = _version_in_interval(inst, intro, end, inclusive)
+                if inside is None:
+                    return None
+                if inside:
+                    return None
+                saw_interval = True
+    if not saw_interval:
+        return None
+    vid = str(record.get("id") or "advisory")
+    return (
+        f"{package or 'package'} {installed} is already past the patched version in {vid}; "
+        "not an open finding."
+    )
+
+
+
 class Compiler:
     def __init__(self, repo: str, root: pathlib.Path, evidence: pathlib.Path):
         self.repo = repo
@@ -419,6 +626,8 @@ class Compiler:
         self.tool_meta: dict[str, dict] = {}
         self.domain_counters: dict[str, int] = defaultdict(int)
         self._dedupe: set[str] = set()
+        self._withdrawn_advisories: dict[str, dict] = {}
+        self._fixed_installs: dict[str, dict] = {}
         self.trivyignore: set[str] = load_trivyignore(root)
         self.notes = (evidence / "NOTES.txt").read_text(errors="replace") if (evidence / "NOTES.txt").is_file() else ""
         self.source_ok: dict[str, bool | None] = {
@@ -447,7 +656,7 @@ class Compiler:
     def _add_finding(self, *, domain: str, severity: str, title: str, evidence: list,
                      impact: str, recommendation: str, source: str, cwes: list[int] | None = None,
                      dedupe_key: str | None = None, finding_id: str | None = None,
-                     package: str | None = None) -> str | None:
+                     package: str | None = None, advisory_ids: list[str] | None = None) -> str | None:
         if not evidence:
             return None
         key = dedupe_key or f"{source}|{title}|{evidence[0].get('file')}|{evidence[0].get('line')}"
@@ -467,6 +676,8 @@ class Compiler:
         }
         if package:
             entry["package"] = package
+        if advisory_ids:
+            entry["advisory_ids"] = advisory_ids_from(*advisory_ids)
         if cwes:
             entry["cwe"] = [f"CWE-{c}" for c in cwes]
             cats = owasp_for_cwes(cwes)
@@ -474,6 +685,175 @@ class Compiler:
                 entry["owasp"] = cats
         self.findings.append(entry)
         return fid
+
+    def _register_withdrawn(self, entry: dict, ids: list[str]) -> None:
+        for item in advisory_ids_from(*ids, *(entry.get("advisory_ids") or [])):
+            self._withdrawn_advisories[item.upper()] = entry
+
+    def _existing_withdrawn(self, ids: list[str]) -> dict | None:
+        for item in advisory_ids_from(*ids):
+            found = self._withdrawn_advisories.get(item.upper())
+            if found:
+                return found
+        return None
+
+    def _install_key(self, lock: str | None, package: str | None,
+                     installed: str | None, advisory_id: str) -> str:
+        return f"{lock or ''}|{package or ''}|{installed or ''}|{advisory_id.upper()}"
+
+    def _register_fixed_install(self, entry: dict, ids: list[str], *, lock: str | None,
+                                package: str | None, installed: str | None) -> None:
+        for item in advisory_ids_from(*ids, *(entry.get("advisory_ids") or [])):
+            self._fixed_installs[self._install_key(lock, package, installed, item)] = entry
+
+    def _existing_fixed_install(self, ids: list[str], *, lock: str | None,
+                                package: str | None, installed: str | None) -> dict | None:
+        for item in advisory_ids_from(*ids):
+            found = self._fixed_installs.get(self._install_key(lock, package, installed, item))
+            if found:
+                return found
+        return None
+
+    def _finding_matches_advisory(self, finding: dict, ids: list[str]) -> bool:
+        needles = {item.upper() for item in advisory_ids_from(*ids)}
+        if not needles:
+            return False
+        stored = {item.upper() for item in (finding.get("advisory_ids") or [])}
+        if stored:
+            return bool(needles & stored)
+        blob = " ".join(
+            str(finding.get(k) or "") for k in ("title", "impact", "recommendation")
+        )
+        for needle in needles:
+            if re.search(r"(?<![A-Za-z0-9-])" + re.escape(needle) + r"(?![A-Za-z0-9-])", blob, re.I):
+                return True
+        return False
+
+    def _finding_lock(self, finding: dict) -> str | None:
+        evs = finding.get("evidence") or []
+        if evs and isinstance(evs[0], dict):
+            return evs[0].get("file")
+        return None
+
+    def _reclassify_open_findings(
+        self, ids: list[str], *, package: str | None, reason: str,
+        lock: str | None = None, installed: str | None = None, all_installs: bool = False,
+    ) -> list[dict]:
+        moved: list[dict] = []
+        remaining: list[dict] = []
+        for finding in self.findings:
+            if finding.get("domain") not in ("DEPS", "dependencies"):
+                remaining.append(finding)
+                continue
+            if package and finding.get("package") and finding.get("package") != package:
+                remaining.append(finding)
+                continue
+            if not all_installs:
+                finding_lock = self._finding_lock(finding)
+                if lock and finding_lock and finding_lock != lock:
+                    remaining.append(finding)
+                    continue
+            if not self._finding_matches_advisory(finding, ids):
+                remaining.append(finding)
+                continue
+            ev0 = (finding.get("evidence") or [{}])[0] if finding.get("evidence") else {}
+            entry = {
+                "id": finding.get("id"),
+                "file": ev0.get("file") if isinstance(ev0, dict) else None,
+                "line": ev0.get("line") if isinstance(ev0, dict) else None,
+                "snippet": (ev0.get("snippet") if isinstance(ev0, dict) else "") or "",
+                "note": reason,
+                "package": finding.get("package") or package,
+                "source": finding.get("source"),
+                "domain": "DEPS",
+                "disposition": "not_a_finding",
+                "advisory_ids": advisory_ids_from(*(finding.get("advisory_ids") or []), *ids),
+            }
+            self.fixed.append(entry)
+            moved.append(entry)
+        self.findings = remaining
+        return moved
+
+    def _record_not_a_finding(
+        self, *, ids: list[str], package: str | None, evidence: list,
+        reason: str, source: str, kind: str, lock: str | None = None,
+        installed: str | None = None,
+    ) -> dict:
+        if kind == "withdrawn":
+            moved = self._reclassify_open_findings(
+                ids, package=package, reason=reason, all_installs=True,
+            )
+            existing = self._existing_withdrawn(ids)
+            if existing:
+                self._register_withdrawn(existing, ids)
+                for entry in moved:
+                    self._register_withdrawn(entry, ids)
+                return existing
+            if moved:
+                for entry in moved:
+                    self._register_withdrawn(entry, ids)
+                return moved[0]
+        else:
+            existing = self._existing_fixed_install(ids, lock=lock, package=package, installed=installed)
+            if existing:
+                return existing
+            moved = self._reclassify_open_findings(
+                ids, package=package, reason=reason, lock=lock, installed=installed, all_installs=False,
+            )
+            if moved:
+                for entry in moved:
+                    self._register_fixed_install(entry, ids, lock=lock, package=package, installed=installed)
+                return moved[0]
+        ev0 = evidence[0] if evidence and isinstance(evidence[0], dict) else {}
+        entry = {
+            "id": self._next_id("dependencies"),
+            "file": ev0.get("file"),
+            "line": ev0.get("line"),
+            "snippet": ev0.get("snippet") or "",
+            "note": reason,
+            "package": package,
+            "source": source,
+            "domain": "DEPS",
+            "disposition": "not_a_finding",
+            "advisory_ids": advisory_ids_from(*ids),
+        }
+        self.fixed.append(entry)
+        if kind == "withdrawn":
+            self._register_withdrawn(entry, ids)
+        else:
+            self._register_fixed_install(entry, ids, lock=lock, package=package, installed=installed)
+        return entry
+
+    def _handle_dependency_advisory(
+        self, *, record: dict, advisory_id: str, aliases: list | None = None,
+        package: str | None, installed: str | None, evidence: list, source: str,
+        lock: str | None = None, lock_dir: str | None = None,
+    ) -> bool:
+        """Record withdrawn or already-fixed advisories as not-a-finding. True means do not add an open finding."""
+        ids = advisory_ids_from(advisory_id, aliases or [])
+        withdrawn = withdrawn_reason(record)
+        if withdrawn or self._existing_withdrawn(ids):
+            when = "" if not withdrawn or withdrawn.lower() == "withdrawn" else f" at {withdrawn}"
+            reason = (
+                f"Advisory {advisory_id} withdrawn{when}; not a finding."
+                if withdrawn else
+                (self._existing_withdrawn(ids) or {}).get("note") or f"Advisory {advisory_id} withdrawn; not a finding."
+            )
+            self._record_not_a_finding(
+                ids=ids, package=package, evidence=evidence, reason=reason,
+                source=source, kind="withdrawn", lock=lock, installed=installed,
+            )
+            return True
+        already = already_fixed_reason(record, package, installed)
+        if already:
+            self._record_not_a_finding(
+                ids=ids, package=package, evidence=evidence, reason=already,
+                source=source, kind="already_fixed", lock=lock, installed=installed,
+            )
+            return True
+        if self._existing_fixed_install(ids, lock=lock, package=package, installed=installed):
+            return True
+        return False
 
     def _mark_source(self, name: str, ok: bool, version: str | None = None, count: int = 0, detail: str = ""):
         self.source_ok[name] = ok
@@ -692,6 +1072,14 @@ class Compiler:
             ev = cite(self.root, lock, line, name) if lock else None
             if not ev:
                 continue
+            lock_dir = str(pathlib.PurePosixPath(lock).parent)
+            ids = advisory_ids_from(vid, aliases)
+            if self._handle_dependency_advisory(
+                record=v, advisory_id=vid, aliases=aliases, package=name,
+                installed=None if version == "?" else version, evidence=[ev],
+                source="osv-scanner", lock=lock, lock_dir=lock_dir,
+            ):
+                continue
             impact = summary
             if cwes:
                 impact += " CWE: " + ", ".join(f"CWE-{c}" for c in cwes[:4])
@@ -704,7 +1092,7 @@ class Compiler:
                 recommendation=f"Upgrade {name} from {version} to a patched release per {vid}.",
                 source="osv-scanner", cwes=cwes or [1104],
                 dedupe_key=f"dep|{lock}|{name}|{version}|{vid}",
-                package=name,
+                package=name, advisory_ids=ids,
             )
             lock_dir = str(pathlib.PurePosixPath(lock).parent)
             self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{name}|{vid.upper()}")
@@ -753,11 +1141,22 @@ class Compiler:
                 if not ev:
                     continue
                 alt = f"dep|{lock}|{pkg}|{ver}|{vid}"
+                aliases = v.get("Identifiers") or v.get("ExtraIdentifiers") or []
+                if isinstance(aliases, list):
+                    alias_ids = advisory_ids_from(vid, aliases)
+                else:
+                    alias_ids = advisory_ids_from(vid)
+                lock_dir = str(pathlib.PurePosixPath(lock).parent)
+                if self._handle_dependency_advisory(
+                    record=v, advisory_id=vid, aliases=alias_ids, package=pkg,
+                    installed=None if ver == "?" else ver, evidence=[ev],
+                    source="trivy", lock=lock, lock_dir=lock_dir,
+                ):
+                    continue
                 if alt in self._dedupe:
                     continue
                 fixed = v.get("FixedVersion")
                 rec = f"Upgrade {pkg} to {fixed}." if fixed else f"Upgrade {pkg} to a patched release per {vid}."
-                lock_dir = str(pathlib.PurePosixPath(lock).parent)
                 self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{vid.upper()}")
                 self._dedupe.add(f"dep_dir_adv|{lock_dir}|{vid.upper()}")
                 self._add_finding(
@@ -765,7 +1164,7 @@ class Compiler:
                     title=f"{pkg} {ver}: {title}",
                     evidence=[ev], impact=desc, recommendation=rec,
                     source="trivy", cwes=cwes or [1104], dedupe_key=alt,
-                    package=pkg,
+                    package=pkg, advisory_ids=alias_ids,
                 )
             for m in block.get("Misconfigurations") or []:
                 if not isinstance(m, dict):
@@ -876,12 +1275,22 @@ class Compiler:
             if not lock:
                 return
             lock_dir = str(pathlib.PurePosixPath(lock).parent)
-            if (f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{ghsa.upper()}" in self._dedupe
-                    or (cve_id and f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{cve_id.upper()}" in self._dedupe)):
-                return
             line = self._line_for_package(lock, pkg)
             ev = cite(self.root, lock, line, pkg)
             if not ev:
+                return
+            aliases = advisory_ids_from(ghsa, cve_id, adv.get("identifiers"))
+            installed = (
+                str(dep.get("version") or (dep.get("package") or {}).get("version") or "") or None
+            )
+            if self._handle_dependency_advisory(
+                record=alert, advisory_id=ghsa, aliases=aliases, package=pkg,
+                installed=installed, evidence=[ev], source="dependabot",
+                lock=lock, lock_dir=lock_dir,
+            ):
+                return
+            if (f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{ghsa.upper()}" in self._dedupe
+                    or (cve_id and f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{cve_id.upper()}" in self._dedupe)):
                 return
             self._dedupe.add(f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{ghsa.upper()}")
             self._dedupe.add(f"dep_dir_adv|{lock_dir}|{ghsa.upper()}")
@@ -894,7 +1303,7 @@ class Compiler:
                 recommendation=f"Upgrade {pkg} per {ghsa}.", source="dependabot",
                 cwes=extract_cwes(adv.get("cve_id")) or [1104],
                 dedupe_key=f"dep|{lock}|{pkg}|{(dep.get('manifest_path') or '')}|{ghsa}",
-                package=pkg,
+                package=pkg, advisory_ids=aliases,
             )
         elif kind == "secret-scanning":
             candidates: list[dict] = []
@@ -999,6 +1408,12 @@ class Compiler:
                 lock_dir = str(pathlib.PurePosixPath(domain_path or ".").parent)
                 m_pkg = re.search(r"Package:\s*([^\s,\n]+)", text + "\n" + help_text)
                 pkg = m_pkg.group(1) if m_pkg else None
+                if self._handle_dependency_advisory(
+                    record=alert, advisory_id=rule_id, aliases=[rule_id], package=pkg,
+                    installed=None, evidence=[ev], source=source,
+                    lock=domain_path, lock_dir=lock_dir,
+                ):
+                    return
                 if pkg and f"dep_dir_pkg_adv|{lock_dir}|{pkg}|{rule_id.upper()}" in self._dedupe:
                     return
                 if not pkg and f"dep_dir_adv|{lock_dir}|{rule_id.upper()}" in self._dedupe:
@@ -1023,6 +1438,7 @@ class Compiler:
                 source=source, cwes=extract_cwes(rule.get("tags")),
                 dedupe_key=f"{source}|{rule_id}|{dedupe_loc}",
                 package=pkg if is_trivy_vuln else None,
+                advisory_ids=[rule_id] if is_trivy_vuln else None,
             )
 
 
@@ -1394,6 +1810,12 @@ class Compiler:
             })
 
         dep_ids = by_domain.get("dependencies", [])
+        dep_fixed = [
+            e for e in self.fixed
+            if str(e.get("id") or "").startswith("DEPS") or e.get("domain") == "DEPS"
+        ]
+        dep_fixed_ids = [e["id"] for e in dep_fixed if e.get("id")]
+        dep_all_ids = dep_ids + dep_fixed_ids
         if osv.get("ok") or trivy.get("ok"):
             gap = " GitHub's own alert list was not read (403/unavailable)." if self.source_ok.get("dependabot") is False else ""
             bits = []
@@ -1401,15 +1823,23 @@ class Compiler:
                 bits.append(tool_note("osv-scanner", osv))
             if trivy.get("ok"):
                 bits.append(tool_note("Trivy", trivy))
+            fixed_note = (
+                f" {len(dep_fixed_ids)} withdrawn or already-fixed advisory(ies) recorded as not a finding."
+                if dep_fixed_ids else ""
+            )
             chapters.append({
                 "id": "dependabot", "status": "analyzed",
-                "note": " ".join(bits) + " Public proxy for Dependabot until #96." + gap,
-                "finding_ids": dep_ids, "evidence": need_ev(dep_ids, arch_ev),
+                "note": " ".join(bits) + " Public proxy for Dependabot until #96." + gap + fixed_note,
+                "finding_ids": dep_all_ids, "evidence": need_ev(dep_all_ids, arch_ev),
             })
             chapters.append({
                 "id": "dependencies", "status": "analyzed",
-                "note": " ".join(bits) + f" {len(dep_ids)} dependency finding(s) promoted after dedupe.",
-                "finding_ids": dep_ids, "evidence": need_ev(dep_ids, arch_ev),
+                "note": (
+                    " ".join(bits)
+                    + f" {len(dep_ids)} open dependency finding(s) after dedupe"
+                    + (f", {len(dep_fixed_ids)} confirmed-fixed / not-a-finding." if dep_fixed_ids else ".")
+                ),
+                "finding_ids": dep_all_ids, "evidence": need_ev(dep_all_ids, arch_ev),
             })
         else:
             for cid, label in (("dependabot", "Dependabot proxy"), ("dependencies", "dependencies")):
