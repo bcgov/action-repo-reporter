@@ -87,7 +87,7 @@ def deterministic_digest(data: dict, report_link: str) -> str:
         f"Open findings: {len(findings)} "
         f"(Critical {counts['Critical']}, High {counts['High']}, "
         f"Medium {counts['Medium']}, Low {counts['Low']}); "
-        f"confirmed-fixed: {len(fixed)}. "
+        f"confirmed-fixed / not-a-finding: {len(fixed)}. "
         f"Chapters analyzed: {analyzed}; not_assessed: {not_assessed}.",
         "",
     ]
@@ -97,7 +97,14 @@ def deterministic_digest(data: dict, report_link: str) -> str:
             lines.append(f"- {f['id']} ({f.get('severity')}): {f.get('title')}")
         lines.append("")
     if fixed:
-        lines.append("Confirmed-fixed seeds/checks: " + ", ".join(e["id"] for e in fixed if e.get("id")) + ".")
+        lines.append(
+            "Confirmed-fixed / not-a-finding: "
+            + ", ".join(e["id"] for e in fixed if e.get("id")) + "."
+        )
+        for entry in fixed:
+            note = entry.get("note")
+            if note and entry.get("disposition") == "not_a_finding":
+                lines.append(f"- {entry.get('id')}: {note}")
         lines.append("")
     dev_only = [f for f in findings if isinstance(f, dict) and f.get("dependency_scope") == "development"]
     if dev_only:
